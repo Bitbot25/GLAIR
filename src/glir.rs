@@ -54,54 +54,23 @@ pub mod ssa {
         }
     }
 
-    pub union InlineValue_ {
-        i32_: i32,
-    }
-
-    pub struct InlineValue {
-        inner_: InlineValue_,
-        typ: typing::Type,
+    #[derive(Debug)]
+    pub enum InlineValue {
+        I32(i32),
     }
 
     impl typing::Typed for InlineValue {
         fn typ(&self) -> typing::Type {
-            self.typ
-        }
-    }
-
-    impl InlineValue {
-        #[allow(non_snake_case)]
-        pub fn I32(val: i32) -> InlineValue {
-            InlineValue {
-                typ: typing::Type::I32,
-                inner_: InlineValue_ { i32_: val },
+            match self {
+                InlineValue::I32(..) => typing::Type::I32,
             }
-        }
-
-        #[inline]
-        pub unsafe fn i32_ref_unchecked<'a>(&'a self) -> &'a i32 {
-            &self.inner_.i32_
-        }
-    }
-
-    impl fmt::Debug for InlineValue {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            f.debug_struct("InlineValue")
-                .field("typ", &self.typ)
-                .field(
-                    "value(hack)",
-                    match self.typ {
-                        typing::Type::I32 => unsafe { self.i32_ref_unchecked() },
-                    },
-                )
-                .finish()
         }
     }
 
     impl fmt::Display for InlineValue {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            match self.typ {
-                typing::Type::I32 => unsafe { fmt::Display::fmt(self.i32_ref_unchecked(), f) },
+            match self {
+                InlineValue::I32(val) => write!(f, "{}", *val),
             }
         }
     }
@@ -150,7 +119,7 @@ pub enum Ins {
 }
 
 pub mod bb {
-    use super::{Ins, ssa};
+    use super::{ssa, Ins};
 
     #[derive(Debug)]
     pub struct BasicBlock {

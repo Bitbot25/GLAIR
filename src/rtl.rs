@@ -1,13 +1,32 @@
+use std::str::FromStr;
+
 // TODO: Change this later to be more "generic".
 pub type Reg = usize;
-pub const REG_AMD64_EAX: Reg = 0;
-pub const REG_AMD64_ECX: Reg = 1;
-pub const REG_AMD64_EDX: Reg = 2;
+
+pub const REG_X86_EAX: Reg = 0;
+pub const REG_X86_ECX: Reg = 1;
+pub const REG_X86_EDX: Reg = 2;
+pub const REG_X86_ESP: Reg = 3;
+pub const REG_AMD64_RSP: Reg = 4;
 
 impl Codegen for Reg {
     fn nasm(&self) -> String {
         match *self {
-            REG_AMD64_EAX => "eax".to_string(),
+            REG_X86_EAX => "eax".to_string(),
+            REG_X86_ECX => "ecx".to_string(),
+            REG_X86_EDX => "edx".to_string(),
+            REG_X86_ESP => "esp".to_string(),
+            REG_AMD64_RSP => "rsp".to_string(),
+            _ => unimplemented!(),
+        }
+    }
+}
+
+impl AsWordTy for Reg {
+    fn word_ty(&self) -> WordTy {
+        match *self {
+            REG_X86_EAX | REG_X86_ECX | REG_X86_EDX | REG_X86_ESP => WordTy::DWord,
+            REG_AMD64_RSP => WordTy::QWord,
             _ => unimplemented!(),
         }
     }
@@ -17,28 +36,99 @@ pub trait Codegen {
     fn nasm(&self) -> String;
 }
 
-pub enum StackType {
-    DWord, // i32
+pub trait AsWordTy {
+    fn word_ty(&self) -> WordTy;
 }
 
-impl Codegen for StackType {
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum WordTy {
+    DWord, // u32
+    QWord, // u64
+}
+
+impl Codegen for WordTy {
     fn nasm(&self) -> String {
         match self {
-            StackType::DWord => "dword".to_string(),
+            WordTy::DWord => "dword".to_string(),
+            WordTy::QWord => "qword".to_string(),
         }
     }
 }
 
+pub enum SimplePlace {
+    Addr(WordTy, i64),
+    Register(Reg),
+}
+
+impl AsWordTy for SimplePlace {
+    fn word_ty(&self) -> WordTy {
+        match self {
+            SimplePlace::Addr(wty, ..) => *wty,
+            SimplePlace::Register(reg) => reg.word_ty(),
+        }
+    }
+}
+
+impl Codegen for SimplePlace {
+    fn nasm(&self) -> String {
+        match self {
+            SimplePlace::Addr(_wty, addr) => format!("{}", addr),
+            SimplePlace::Register(reg) => reg.nasm(),
+        }
+    }
+}
+
+//pub enum Place {
+//    Simple(SimplePlace),
+//    Complex(ComplexPlace),
+//}
+
 pub enum Place {
-    Stack { typ: StackType, sp_offset: usize },
-    Register(Reg)
+    Add(Box<(Place, Place)>),
+    Sub(Box<(Place, Place)>),
+    Simple(SimplePlace),
+}
+
+impl AsWordTy for Place {
+    fn word_ty(&self) -> WordTy {
+        match self {
+            Place::Add(ops) => {
+                assert_eq!(ops.0.word_ty(), ops.1.word_ty());
+                ops.0.word_ty()
+            }
+            Place::Sub(ops) => {
+                assert_eq!(ops.0.word_ty(), ops.1.word_ty());
+                ops.0.word_ty()
+            }
+            Place::Simple(simple) => simple.word_ty(),
+        }
+    }
+}
+
+impl AsWordTy for (Place, Place) {
+    fn word_ty(&self) -> WordTy {
+        let (a, b) = self;
+        assert_eq!(a.word_ty(), b.word_ty());
+        a.word_ty()
+    }
 }
 
 impl Codegen for Place {
     fn nasm(&self) -> String {
         match self {
-            Place::Stack { typ, sp_offset } => format!("{} [esp-{}]", typ.nasm(), sp_offset),
-            Place::Register(reg) => reg.nasm(),
+            Place::Add(ops) => format!(
+                "{} [{}+{}]",
+                ops.word_ty().nasm(),
+                ops.0.nasm(),
+                ops.1.nasm()
+            ),
+            Place::Sub(ops) => format!(
+                "{} [{}-{}]",
+                ops.word_ty().nasm(),
+                ops.0.nasm(),
+                ops.1.nasm()
+            ),
+            Place::Simple(simple) => simple.nasm(),
         }
     }
 }
@@ -50,7 +140,7 @@ pub enum Value {
 impl Codegen for Value {
     fn nasm(&self) -> String {
         match self {
-            Value::I32(val) => val.to_string()
+            Value::I32(val) => val.to_string(),
         }
     }
 }
@@ -58,13 +148,15 @@ impl Codegen for Value {
 pub enum Op {
     Move(Place, Value),
     Sub(Place, Value),
+    Add(Place, Value),
 }
 
 impl Codegen for Op {
     fn nasm(&self) -> String {
         match self {
             Op::Move(place, value) => format!("mov {}, {}", place.nasm(), value.nasm()),
-            Op::Sub(..) => todo!()
+            Op::Sub(place, value) => format!("sub {}, {}", place.nasm(), value.nasm()),
+            Op::Add(place, value) => format!("sub {}, {}", place.nasm(), value.nasm()),
         }
     }
 }
