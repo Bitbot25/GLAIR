@@ -1,12 +1,14 @@
 // TODO: Change this later to be more "generic".
-pub enum Reg {
-    Eax,
-}
+pub type Reg = usize;
+pub const REG_AMD64_EAX: Reg = 0;
+pub const REG_AMD64_ECX: Reg = 1;
+pub const REG_AMD64_EDX: Reg = 2;
 
 impl Codegen for Reg {
     fn nasm(&self) -> String {
-        match self {
-            Reg::Eax => "eax".to_string(),
+        match *self {
+            REG_AMD64_EAX => "eax".to_string(),
+            _ => unimplemented!(),
         }
     }
 }
