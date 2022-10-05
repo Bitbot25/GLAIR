@@ -1,6 +1,5 @@
 use std::str::FromStr;
 
-// TODO: Change this later to be more "generic".
 pub type Reg = usize;
 
 pub const REG_X86_EAX: Reg = 0;
