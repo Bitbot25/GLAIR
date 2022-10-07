@@ -1,13 +1,17 @@
+pub mod compile;
+
 pub mod typing {
     #[derive(Hash, Debug, Clone, Copy, PartialEq, Eq)]
     pub enum Type {
         I32,
+        U32,
     }
 
     impl Type {
         pub const fn mem_size(&self) -> usize {
             match self {
                 Type::I32 => 4,
+                Type::U32 => 4,
             }
         }
     }
@@ -57,12 +61,14 @@ pub mod ssa {
     #[derive(Debug)]
     pub enum InlineValue {
         I32(i32),
+        U32(u32),
     }
 
     impl typing::Typed for InlineValue {
         fn typ(&self) -> typing::Type {
             match self {
                 InlineValue::I32(..) => typing::Type::I32,
+                InlineValue::U32(..) => typing::Type::U32,
             }
         }
     }
@@ -71,6 +77,7 @@ pub mod ssa {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             match self {
                 InlineValue::I32(val) => write!(f, "{}", *val),
+                InlineValue::U32(val) => write!(f, "{}", *val),
             }
         }
     }

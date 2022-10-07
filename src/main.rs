@@ -2,15 +2,16 @@ mod glir;
 mod rtl;
 
 use glir::bb;
+use glir::compile::CompileIntoLBB;
 use glir::ssa;
 use glir::typing;
 use rtl::Codegen;
 
 fn main() {
-    let x_0 = ssa::Variable::new("x", typing::Type::I32);
-    let x_1 = x_0.ssa_bump();
+    let x_0 = ssa::Variable::new("x", typing::Type::U32);
+    let _x_1 = x_0.ssa_bump();
 
-    let bb = bb::BasicBlock {
+    /*let bb = bb::BasicBlock {
         terminator: bb::Terminator::Void,
         ins_list: vec![
             glir::Ins::Init(x_0, ssa::Operand::Inline(ssa::InlineValue::I32(10))),
@@ -20,10 +21,20 @@ fn main() {
                 ssa::Operand::Inline(ssa::InlineValue::I32(2)),
             ),
         ],
+    };*/
+    let bb = bb::BasicBlock {
+        terminator: bb::Terminator::Void,
+        ins_list: vec![
+            glir::Ins::Init(x_0, ssa::Operand::Inline(ssa::InlineValue::U32(10))),
+        ],
     };
-    dbg!(&bb);
 
-    let rtl = rtl::LBB {
+    dbg!(&bb);
+    let rtl = bb.compile_into_bb();
+    eprintln!("RTL of GLIR:\n{:#?}", rtl);
+    eprintln!("NASM of GLIR:\n{}", rtl.nasm());
+
+    /*let _rtl = rtl::LBB {
         label: "LBB_0",
         ops: vec![
             rtl::Op::Move(
@@ -41,6 +52,6 @@ fn main() {
                 rtl::Value::I32(2),
             ),
         ],
-    };
-    println!("RTL: \n{}", rtl.nasm());
+    };*/
+    // println!("RTL: \n{}", rtl.nasm());
 }

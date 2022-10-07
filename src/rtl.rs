@@ -54,8 +54,9 @@ impl Codegen for WordTy {
     }
 }
 
+#[derive(Debug)]
 pub enum SimplePlace {
-    Addr(WordTy, i64),
+    Addr(WordTy, isize),
     Register(Reg),
 }
 
@@ -82,6 +83,7 @@ impl Codegen for SimplePlace {
 //    Complex(ComplexPlace),
 //}
 
+#[derive(Debug)]
 pub enum Place {
     Add(Box<(Place, Place)>),
     Sub(Box<(Place, Place)>),
@@ -132,18 +134,24 @@ impl Codegen for Place {
     }
 }
 
+#[derive(Debug)]
 pub enum Value {
     I32(i32),
+    U32(u32),
+    Place(Place),
 }
 
 impl Codegen for Value {
     fn nasm(&self) -> String {
         match self {
             Value::I32(val) => val.to_string(),
+            Value::U32(val) => val.to_string(),
+            Value::Place(place) => place.nasm(),
         }
     }
 }
 
+#[derive(Debug)]
 pub enum Op {
     Move(Place, Value),
     Sub(Place, Value),
@@ -160,6 +168,7 @@ impl Codegen for Op {
     }
 }
 
+#[derive(Debug)]
 pub struct LBB {
     pub label: &'static str,
     pub ops: Vec<Op>,
