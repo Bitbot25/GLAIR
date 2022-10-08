@@ -1,5 +1,3 @@
-use std::str::FromStr;
-
 pub type Reg = usize;
 
 pub const REG_X86_EAX: Reg = 0;
@@ -55,81 +53,46 @@ impl Codegen for WordTy {
 }
 
 #[derive(Debug)]
-pub enum SimplePlace {
+pub enum DerefPlace {
+    Reg(WordTy, Reg),
     Addr(WordTy, isize),
-    Register(Reg),
+    Sub(Box<(DerefPlace, DerefPlace)>),
 }
 
-impl AsWordTy for SimplePlace {
-    fn word_ty(&self) -> WordTy {
-        match self {
-            SimplePlace::Addr(wty, ..) => *wty,
-            SimplePlace::Register(reg) => reg.word_ty(),
-        }
-    }
-}
-
-impl Codegen for SimplePlace {
+impl Codegen for DerefPlace {
     fn nasm(&self) -> String {
         match self {
-            SimplePlace::Addr(_wty, addr) => format!("{}", addr),
-            SimplePlace::Register(reg) => reg.nasm(),
+            DerefPlace::Reg(_wty, reg) => reg.nasm(),
+            DerefPlace::Addr(_wty, addr) => addr.to_string(),
+            DerefPlace::Sub(operands) => format!("{} - {}", operands.0.nasm(), operands.1.nasm()),
         }
     }
 }
 
-//pub enum Place {
-//    Simple(SimplePlace),
-//    Complex(ComplexPlace),
-//}
+impl AsWordTy for DerefPlace {
+    fn word_ty(&self) -> WordTy {
+        match self {
+            DerefPlace::Reg(wty, ..) => *wty,
+            DerefPlace::Addr(wty, ..) => *wty,
+            DerefPlace::Sub(operands) => {
+                assert_eq!(operands.0.word_ty(), operands.1.word_ty());
+                operands.0.word_ty()
+            }
+        }
+    }
+}
 
 #[derive(Debug)]
 pub enum Place {
-    Add(Box<(Place, Place)>),
-    Sub(Box<(Place, Place)>),
-    Simple(SimplePlace),
-}
-
-impl AsWordTy for Place {
-    fn word_ty(&self) -> WordTy {
-        match self {
-            Place::Add(ops) => {
-                assert_eq!(ops.0.word_ty(), ops.1.word_ty());
-                ops.0.word_ty()
-            }
-            Place::Sub(ops) => {
-                assert_eq!(ops.0.word_ty(), ops.1.word_ty());
-                ops.0.word_ty()
-            }
-            Place::Simple(simple) => simple.word_ty(),
-        }
-    }
-}
-
-impl AsWordTy for (Place, Place) {
-    fn word_ty(&self) -> WordTy {
-        let (a, b) = self;
-        assert_eq!(a.word_ty(), b.word_ty());
-        a.word_ty()
-    }
+    Reg(Reg),
+    Deref(DerefPlace),
 }
 
 impl Codegen for Place {
     fn nasm(&self) -> String {
         match self {
-            Place::Add(ops) => format!(
-                "{} [{}+{}]",
-                ops.word_ty().nasm(),
-                ops.0.nasm(),
-                ops.1.nasm()
-            ),
-            Place::Sub(ops) => format!(
-                "{} [{}-{}]",
-                ops.word_ty().nasm(),
-                ops.0.nasm(),
-                ops.1.nasm()
-            ),
-            Place::Simple(simple) => simple.nasm(),
+            Place::Reg(reg) => reg.nasm(),
+            Place::Deref(deref) => format!("{} [{}]", deref.word_ty().nasm(), deref.nasm()),
         }
     }
 }

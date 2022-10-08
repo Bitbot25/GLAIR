@@ -9,7 +9,7 @@ use rtl::Codegen;
 
 fn main() {
     let x_0 = ssa::Variable::new("x", typing::Type::U32);
-    let _x_1 = x_0.ssa_bump();
+    let y_0 = ssa::Variable::new("y", typing::Type::U32);
 
     /*let bb = bb::BasicBlock {
         terminator: bb::Terminator::Void,
@@ -26,11 +26,22 @@ fn main() {
         terminator: bb::Terminator::Void,
         ins_list: vec![
             glir::Ins::Init(x_0, ssa::Operand::Inline(ssa::InlineValue::U32(10))),
+            glir::Ins::Init(y_0, ssa::Operand::Variable(x_0)),
         ],
     };
 
     dbg!(&bb);
-    let rtl = bb.compile_into_bb();
+    let mut compiler = glir::compile::Compiler::default();
+    compiler.variable_locations.insert(
+        x_0,
+        glir::compile::VariableLocation::Stack { block_offset: 4 },
+    );
+    compiler.variable_locations.insert(
+        y_0,
+        glir::compile::VariableLocation::Stack { block_offset: 8 },
+    );
+
+    let rtl = bb.compile_into_bb(&mut compiler);
     eprintln!("RTL of GLIR:\n{:#?}", rtl);
     eprintln!("NASM of GLIR:\n{}", rtl.nasm());
 
