@@ -34,11 +34,11 @@ fn main() {
     let mut compiler = glir::compile::Compiler::default();
     compiler.variable_locations.insert(
         x_0,
-        glir::compile::VariableLocation::Stack { block_offset: 4 },
+        glir::compile::VariableLocation::Register(rtl::REG_X86_EAX)
     );
     compiler.variable_locations.insert(
         y_0,
-        glir::compile::VariableLocation::Stack { block_offset: 8 },
+        glir::compile::VariableLocation::Register(rtl::REG_X86_ECX),
     );
 
     let rtl = bb.compile_into_bb(&mut compiler);

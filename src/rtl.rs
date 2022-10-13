@@ -53,31 +53,18 @@ impl Codegen for WordTy {
 }
 
 #[derive(Debug)]
-pub enum DerefPlace {
-    Reg(WordTy, Reg),
-    Addr(WordTy, isize),
-    Sub(Box<(DerefPlace, DerefPlace)>),
+pub enum PlaceExpr {
+    Reg(Reg),
+    Addr(isize),
+    Sub(Box<(PlaceExpr, PlaceExpr)>)
 }
 
-impl Codegen for DerefPlace {
+impl Codegen for PlaceExpr {
     fn nasm(&self) -> String {
         match self {
-            DerefPlace::Reg(_wty, reg) => reg.nasm(),
-            DerefPlace::Addr(_wty, addr) => addr.to_string(),
-            DerefPlace::Sub(operands) => format!("{} - {}", operands.0.nasm(), operands.1.nasm()),
-        }
-    }
-}
-
-impl AsWordTy for DerefPlace {
-    fn word_ty(&self) -> WordTy {
-        match self {
-            DerefPlace::Reg(wty, ..) => *wty,
-            DerefPlace::Addr(wty, ..) => *wty,
-            DerefPlace::Sub(operands) => {
-                assert_eq!(operands.0.word_ty(), operands.1.word_ty());
-                operands.0.word_ty()
-            }
+            PlaceExpr::Reg(reg) => reg.nasm(),
+            PlaceExpr::Addr(num) => num.to_string(),
+            PlaceExpr::Sub(operands) => format!("{}-{}", operands.0.nasm(), operands.1.nasm())
         }
     }
 }
@@ -85,14 +72,23 @@ impl AsWordTy for DerefPlace {
 #[derive(Debug)]
 pub enum Place {
     Reg(Reg),
-    Deref(DerefPlace),
+    Expr(WordTy, PlaceExpr),
 }
 
 impl Codegen for Place {
     fn nasm(&self) -> String {
         match self {
             Place::Reg(reg) => reg.nasm(),
-            Place::Deref(deref) => format!("{} [{}]", deref.word_ty().nasm(), deref.nasm()),
+            Place::Expr(wty, expr) => format!("{} [{}]", wty.nasm(), expr.nasm()),
+        }
+    }
+}
+
+impl AsWordTy for Place {
+    fn word_ty(&self) -> WordTy {
+        match self {
+            Place::Reg(reg) => reg.word_ty(),
+            Place::Expr(wty, ..) => *wty,
         }
     }
 }
