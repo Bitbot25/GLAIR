@@ -1,10 +1,10 @@
-mod glir;
 mod rtl;
+mod bb;
+mod ssa;
+mod typing;
+mod compile;
 
-use glir::bb;
-use glir::compile::CompileIntoLBB;
-use glir::ssa;
-use glir::typing;
+use compile::CompileIntoLBB;
 use rtl::Codegen;
 
 fn main() {
@@ -25,20 +25,20 @@ fn main() {
     let bb = bb::BasicBlock {
         terminator: bb::Terminator::Void,
         ins_list: vec![
-            glir::Ins::Init(x_0, ssa::Operand::Inline(ssa::InlineValue::U32(10))),
-            glir::Ins::Init(y_0, ssa::Operand::Variable(x_0)),
+            ssa::Ins::Init(x_0, ssa::Operand::Inline(ssa::InlineValue::U32(10))),
+            ssa::Ins::Init(y_0, ssa::Operand::Variable(x_0)),
         ],
     };
 
     dbg!(&bb);
-    let mut compiler = glir::compile::Compiler::default();
+    let mut compiler = compile::Compiler::default();
     compiler.variable_locations.insert(
         x_0,
-        glir::compile::VariableLocation::Register(rtl::REG_X86_EAX)
+        compile::VariableLocation::Register(rtl::REG_X86_EAX)
     );
     compiler.variable_locations.insert(
         y_0,
-        glir::compile::VariableLocation::Register(rtl::REG_X86_ECX),
+        compile::VariableLocation::Register(rtl::REG_X86_ECX),
     );
 
     let rtl = bb.compile_into_bb(&mut compiler);
