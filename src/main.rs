@@ -1,10 +1,13 @@
+mod codegen;
 mod rtl;
 mod ssa;
 mod typing;
 mod compile;
 
-use compile::CompileIntoLBB;
-use rtl::Codegen;
+use compile::CompileIntoBlock;
+use codegen::Codegen;
+use codegen::DWORD_SZ;
+// use rtl::Codegen;
 
 fn main() {
     let x_0 = ssa::Variable::new("x", typing::Type::U32);
@@ -28,40 +31,25 @@ fn main() {
             ssa::Ins::Init(y_0, ssa::Operand::Variable(x_0)),
         ],
     };
+    let compiled_rtl = bb.compile_into_block();
+    let mut codegen_ctx = codegen::CodegenContext::default();
+    codegen_ctx.pseudo_reg_mappings.insert(0, rtl::PhysRegister::Amd64(rtl::amd64::Amd64Register::Eax));
+    codegen_ctx.pseudo_reg_mappings.insert(1, rtl::PhysRegister::Amd64Memory(rtl::amd64::Amd64Memory::Register(DWORD_SZ, rtl::amd64::Amd64Register::Ecx)));
 
-    dbg!(&bb);
-    let mut compiler = compile::Compiler::default();
-    compiler.variable_locations.insert(
-        x_0,
-        compile::VariableLocation::Register(rtl::REG_X86_EAX)
-    );
-    compiler.variable_locations.insert(
-        y_0,
-        compile::VariableLocation::Register(rtl::REG_X86_ECX),
-    );
+    println!("{}", compiled_rtl);
+    println!("{}", compiled_rtl.codegen_string(&mut codegen_ctx));
 
-    let rtl = bb.compile_into_bb(&mut compiler);
-    eprintln!("RTL of GLIR:\n{:#?}", rtl);
-    eprintln!("NASM of GLIR:\n{}", rtl.nasm());
-
-    /*let _rtl = rtl::LBB {
-        label: "LBB_0",
-        ops: vec![
-            rtl::Op::Move(
-                rtl::Place::Sub(Box::new((
-                    rtl::Place::Simple(rtl::SimplePlace::Register(rtl::REG_X86_ESP)),
-                    rtl::Place::Simple(rtl::SimplePlace::Addr(rtl::WordTy::DWord, 4)),
-                ))),
-                rtl::Value::I32(10),
-            ),
-            rtl::Op::Sub(
-                rtl::Place::Sub(Box::new((
-                    rtl::Place::Simple(rtl::SimplePlace::Register(rtl::REG_X86_ESP)),
-                    rtl::Place::Simple(rtl::SimplePlace::Addr(rtl::WordTy::DWord, 4)),
-                ))),
-                rtl::Value::I32(2),
-            ),
-        ],
+    /*let cp = rtl::Op::Copy(rtl::OpCopy {
+        to: rtl::Register::Pseudo(0),
+        from: rtl::RValue::Lit(rtl::Lit::LitU8(69)),
+    });
+    let add = rtl::Op::Add(rtl::OpAdd {
+        to: rtl::Register::Pseudo(0),
+        val: rtl::RValue::Lit(rtl::Lit::LitU8(1)),
+    });
+    let rtl = rtl::Block {
+        name: Some("my_function".to_string()),
+        ops: vec![cp, add],
+        metadata: (),
     };*/
-    // println!("RTL: \n{}", rtl.nasm());
 }

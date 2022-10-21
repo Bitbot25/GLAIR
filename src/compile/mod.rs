@@ -1,43 +1,70 @@
 mod init;
 
+use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
-use crate::ssa;
+use std::hash::Hash;
+use std::hash::Hasher;
+
 use crate::rtl;
+use crate::ssa;
 
-#[derive(Debug, Default)]
-pub struct Compiler {
-    pub variable_locations: HashMap<ssa::Variable, VariableLocation>,
-    sp_inc: usize,
+#[derive(Default)]
+pub struct CompileContext {
+    pub(self) reg_number: usize,
+    // u64 is the hash of the ssa::Variable
+    pub(self) registers: HashMap<u64, rtl::Register>,
 }
 
-#[derive(Debug)]
-pub enum VariableLocation {
-    Stack { block_offset: usize },
-    Register(rtl::Reg),
+impl CompileContext {
+    fn next_pseudo_reg(&mut self) -> usize {
+        self.reg_number += 1;
+        self.reg_number - 1
+    }
+
+    pub fn acquire_variable_register(&mut self, var: &ssa::Variable) -> rtl::Register {
+        let mut hasher = DefaultHasher::new();
+        var.hash(&mut hasher);
+        let hash_of_var = hasher.finish();
+        let val = self.registers.get(&hash_of_var);
+
+        match val {
+            Some(reg) => *reg,
+            None => {
+                let reg = rtl::Register(self.next_pseudo_reg());
+                self.registers.insert(hash_of_var, reg);
+                reg
+            }
+        }
+    }
 }
 
-pub trait CompileIntoLBB {
-    fn compile_into_bb(&self, compiler: &mut Compiler) -> rtl::LBB;
+pub trait CompileIntoBlock {
+    fn compile_into_block(&self) -> rtl::Block;
 }
 
 pub trait CompileIntoOps {
-    fn compile_into_ops(&self, compiler: &mut Compiler, ops: &mut Vec<rtl::Op>);
+    fn compile_into_ops(&self, ops: &mut rtl::Ops, context: &mut CompileContext);
 }
 
-impl CompileIntoLBB for ssa::BasicBlock {
-    fn compile_into_bb(&self, compiler: &mut Compiler) -> rtl::LBB {
-        let mut ops = Vec::new();
+impl CompileIntoBlock for ssa::BasicBlock {
+    fn compile_into_block(&self) -> rtl::Block {
+        let mut context = CompileContext::default();
+        let mut ops = rtl::Ops::new();
         for ins in &self.ins_list {
-            ins.compile_into_ops(compiler, &mut ops);
+            ins.compile_into_ops(&mut ops, &mut context);
         }
-        rtl::LBB { label: "BB_0", ops }
+        rtl::Block {
+            metadata: (),
+            ops,
+            name: Some("LBB_0".to_string()),
+        }
     }
 }
 
 impl CompileIntoOps for ssa::Ins {
-    fn compile_into_ops(&self, compiler: &mut Compiler, ops: &mut Vec<rtl::Op>) {
+    fn compile_into_ops(&self, ops: &mut Vec<rtl::Op>, context: &mut CompileContext) {
         match self {
-            ssa::Ins::Init(dest, val) => init::compile(dest, val, compiler, ops),
+            ssa::Ins::Init(dest, val) => init::compile(dest, val, ops, context),
             _ => todo!(),
         }
     }
