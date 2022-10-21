@@ -1,10 +1,8 @@
 mod init;
 
 use std::collections::HashMap;
-use crate::typing::Typed;
 use crate::ssa;
-use crate::rtl::{self, AsWordTy};
-use crate::bb;
+use crate::rtl;
 
 #[derive(Debug, Default)]
 pub struct Compiler {
@@ -26,7 +24,7 @@ pub trait CompileIntoOps {
     fn compile_into_ops(&self, compiler: &mut Compiler, ops: &mut Vec<rtl::Op>);
 }
 
-impl CompileIntoLBB for bb::BasicBlock {
+impl CompileIntoLBB for ssa::BasicBlock {
     fn compile_into_bb(&self, compiler: &mut Compiler) -> rtl::LBB {
         let mut ops = Vec::new();
         for ins in &self.ins_list {

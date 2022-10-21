@@ -99,3 +99,17 @@ pub enum Ins {
     ),
     Init(Variable, /* <- */ Operand),
 }
+
+#[derive(Debug)]
+pub struct BasicBlock {
+    pub ins_list: Vec<Ins>,
+    pub terminator: Terminator,
+}
+
+#[derive(Debug)]
+#[allow(dead_code)]
+pub enum Terminator {
+    Ret(Variable),
+    Jmp(Box<BasicBlock>),
+    Void,
+}

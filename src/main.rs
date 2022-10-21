@@ -1,5 +1,4 @@
 mod rtl;
-mod bb;
 mod ssa;
 mod typing;
 mod compile;
@@ -22,8 +21,8 @@ fn main() {
             ),
         ],
     };*/
-    let bb = bb::BasicBlock {
-        terminator: bb::Terminator::Void,
+    let bb = ssa::BasicBlock {
+        terminator: ssa::Terminator::Void,
         ins_list: vec![
             ssa::Ins::Init(x_0, ssa::Operand::Inline(ssa::InlineValue::U32(10))),
             ssa::Ins::Init(y_0, ssa::Operand::Variable(x_0)),
