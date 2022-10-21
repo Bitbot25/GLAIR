@@ -54,11 +54,11 @@ impl Codegen for rtl::amd64::Amd64Memory {
     }
 }
 
-
 impl Codegen for rtl::Register {
     fn codegen_string(&self, context: &mut CodegenContext) -> String {
         // FIXME: Do i really need to clone here? Is there a better way?:
-        let phys_reg = super::unwrap_phys_register(context.pseudo_reg_mappings.get(&self.0), self.0).clone();
+        let phys_reg =
+            super::unwrap_phys_register(context.pseudo_reg_mappings.get(&self.0), self.0).clone();
         phys_reg.codegen_string(context)
     }
 }
@@ -71,7 +71,6 @@ impl Codegen for rtl::RValue {
         }
     }
 }
-
 
 impl Codegen for rtl::Op {
     fn codegen_string(&self, context: &mut CodegenContext) -> String {
