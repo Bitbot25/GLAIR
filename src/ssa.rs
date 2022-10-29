@@ -35,69 +35,65 @@ impl fmt::Display for Variable {
 }
 
 #[derive(Debug)]
-pub enum InlineValue {
+pub enum Literal {
     I32(i32),
     U32(u32),
 }
 
-impl typing::Typed for InlineValue {
+impl typing::Typed for Literal {
     fn typ(&self) -> typing::Type {
         match self {
-            InlineValue::I32(..) => typing::Type::I32,
-            InlineValue::U32(..) => typing::Type::U32,
+            Literal::I32(..) => typing::Type::I32,
+            Literal::U32(..) => typing::Type::U32,
         }
     }
 }
 
-impl fmt::Display for InlineValue {
+impl fmt::Display for Literal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            InlineValue::I32(val) => write!(f, "{}", *val),
-            InlineValue::U32(val) => write!(f, "{}", *val),
+            Literal::I32(val) => write!(f, "{}", *val),
+            Literal::U32(val) => write!(f, "{}", *val),
         }
     }
 }
 
 #[derive(Debug)]
-pub enum Operand {
-    Inline(InlineValue),
+pub enum RValue {
+    Lit(Literal),
     Variable(Variable),
 }
 
-impl typing::Typed for Operand {
+impl typing::Typed for RValue {
     #[inline]
     fn typ(&self) -> typing::Type {
         match self {
-            Operand::Inline(inline) => inline.typ(),
-            Operand::Variable(var) => var.typ(),
+            RValue::Lit(inline) => inline.typ(),
+            RValue::Variable(var) => var.typ(),
         }
     }
 }
 
-impl Operand {
+impl RValue {
     #[inline]
     pub fn mem_size(&self) -> usize {
         self.typ().mem_size()
     }
 }
 
-impl fmt::Display for Operand {
+impl fmt::Display for RValue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Operand::Inline(inline) => fmt::Display::fmt(inline, f),
-            Operand::Variable(var) => fmt::Display::fmt(var, f),
+            RValue::Lit(inline) => fmt::Display::fmt(inline, f),
+            RValue::Variable(var) => fmt::Display::fmt(var, f),
         }
     }
 }
 
 #[derive(Debug)]
 pub enum Ins {
-    Sub(
-        Variable,
-        /* = */ Operand,
-        /* - */ Operand,
-    ),
-    Init(Variable, /* <- */ Operand),
+    Sub(Variable, /* = */ RValue, /* - */ RValue),
+    Assign(Variable, /* <- */ RValue),
 }
 
 #[derive(Debug)]

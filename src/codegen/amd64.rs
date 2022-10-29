@@ -1,5 +1,5 @@
 use super::{Codegen, CodegenContext, BYTE_SZ, WORD_SZ, DWORD_SZ, QWORD_SZ};
-use crate::rtl::{self, PhysRegister};
+use crate::rtl;
 
 impl Codegen for rtl::amd64::Amd64Register {
     fn codegen_string(&self, _context: &mut CodegenContext) -> String {

@@ -64,7 +64,7 @@ impl CompileIntoBlock for ssa::BasicBlock {
 impl CompileIntoOps for ssa::Ins {
     fn compile_into_ops(&self, ops: &mut Vec<rtl::Op>, context: &mut CompileContext) {
         match self {
-            ssa::Ins::Init(dest, val) => init::compile(dest, val, ops, context),
+            ssa::Ins::Assign(dest, val) => init::compile(dest, val, ops, context),
             _ => todo!(),
         }
     }
