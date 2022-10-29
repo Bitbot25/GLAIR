@@ -1,12 +1,12 @@
+use super::{Compiler, VariableLocation};
 use crate::rtl;
+use crate::rtl::AsWordTy;
 use crate::ssa;
 use crate::typing::Typed;
-use crate::rtl::AsWordTy;
-use super::{Compiler, VariableLocation};
 
 pub(super) fn compile(
     dest: &ssa::Variable,
-    val: &ssa::Operand,
+    val: &ssa::RValue,
     compiler: &mut Compiler,
     ops: &mut Vec<rtl::Op>,
 ) {
@@ -28,11 +28,11 @@ pub(super) fn compile(
                     ))),
                 ),
                 match val {
-                    ssa::Operand::Inline(inline_val) => match inline_val {
-                        ssa::InlineValue::I32(num) => rtl::Value::I32(*num),
-                        ssa::InlineValue::U32(num) => rtl::Value::U32(*num),
+                    ssa::RValue::Lit(inline_val) => match inline_val {
+                        ssa::Literal::I32(num) => rtl::Value::I32(*num),
+                        ssa::Literal::U32(num) => rtl::Value::U32(*num),
                     },
-                    ssa::Operand::Variable(var) => match compiler.variable_locations.get(var) {
+                    ssa::RValue::Variable(var) => match compiler.variable_locations.get(var) {
                         Some(VariableLocation::Stack { block_offset }) => {
                             let diff = *block_offset as isize - compiler.sp_inc as isize;
                             match diff {
@@ -68,9 +68,9 @@ pub(super) fn compile(
             ops.push(rtl::Op::Move(
                 rtl::Place::Reg(*reg),
                 match val {
-                    ssa::Operand::Inline(ssa::InlineValue::I32(num)) => rtl::Value::I32(*num),
-                    ssa::Operand::Inline(ssa::InlineValue::U32(num)) => rtl::Value::U32(*num),
-                    ssa::Operand::Variable(var) => match compiler.variable_locations.get(var) {
+                    ssa::RValue::Lit(ssa::Literal::I32(num)) => rtl::Value::I32(*num),
+                    ssa::RValue::Lit(ssa::Literal::U32(num)) => rtl::Value::U32(*num),
+                    ssa::RValue::Variable(var) => match compiler.variable_locations.get(var) {
                         Some(VariableLocation::Register(var_reg)) => {
                             rtl::Value::Place(rtl::Place::Reg(*var_reg))
                         }

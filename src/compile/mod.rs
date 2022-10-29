@@ -1,8 +1,8 @@
 mod init;
 
-use std::collections::HashMap;
-use crate::ssa;
 use crate::rtl;
+use crate::ssa;
+use std::collections::HashMap;
 
 #[derive(Debug, Default)]
 pub struct Compiler {
@@ -37,7 +37,7 @@ impl CompileIntoLBB for ssa::BasicBlock {
 impl CompileIntoOps for ssa::Ins {
     fn compile_into_ops(&self, compiler: &mut Compiler, ops: &mut Vec<rtl::Op>) {
         match self {
-            ssa::Ins::Init(dest, val) => init::compile(dest, val, compiler, ops),
+            ssa::Ins::Assign(dest, val) => init::compile(dest, val, compiler, ops),
             _ => todo!(),
         }
     }
