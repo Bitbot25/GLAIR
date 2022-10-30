@@ -1,4 +1,5 @@
 mod assign;
+mod sub;
 
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
@@ -65,6 +66,7 @@ impl CompileIntoOps for ssa::Ins {
     fn compile_into_ops(&self, ops: &mut Vec<rtl::Op>, context: &mut CompileContext) {
         match self {
             ssa::Ins::Assign(dest, val) => assign::compile(dest, val, ops, context),
+            ssa::Ins::Sub(dest, a, b) => sub::compile(dest, a, b, ops, context),
             _ => todo!(),
         }
     }

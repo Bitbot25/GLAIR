@@ -2,8 +2,8 @@ use std::collections::HashMap;
 
 use crate::codegen;
 
-pub mod debug;
 pub mod amd64;
+pub mod debug;
 
 #[derive(Debug, Clone)]
 pub enum PhysRegister {
@@ -45,7 +45,9 @@ pub enum RValue {
 impl RValue {
     pub fn sz(&self, pseudo_reg_mappings: &HashMap<usize, PhysRegister>) -> usize {
         match self {
-            RValue::Register(reg) => codegen::unwrap_phys_register(pseudo_reg_mappings.get(&reg.0), reg.0).sz(),
+            RValue::Register(reg) => {
+                codegen::unwrap_phys_register(pseudo_reg_mappings.get(&reg.0), reg.0).sz()
+            }
             RValue::Lit(lit) => lit.sz(),
         }
     }
@@ -56,14 +58,14 @@ pub struct OpCopy {
     pub from: RValue,
 }
 
-pub struct OpAdd {
-    pub to: Register,
+pub struct OpSub {
+    pub from: Register,
     pub val: RValue,
 }
 
 pub enum Op {
     Copy(OpCopy),
-    Add(OpAdd),
+    Sub(OpSub),
 }
 
 pub type Ops = Vec<Op>;

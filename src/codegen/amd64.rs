@@ -1,4 +1,4 @@
-use super::{Codegen, CodegenContext, BYTE_SZ, WORD_SZ, DWORD_SZ, QWORD_SZ};
+use super::{Codegen, CodegenContext, BYTE_SZ, DWORD_SZ, QWORD_SZ, WORD_SZ};
 use crate::rtl;
 
 impl Codegen for rtl::amd64::Amd64Register {
@@ -84,12 +84,12 @@ impl Codegen for rtl::Op {
                     cp.from.codegen_string(context)
                 )
             }
-            rtl::Op::Add(add) => {
+            rtl::Op::Sub(add) => {
                 // Check that both operands are of the same size.
-                super::check_lvalue_rvalue(context, &add.to, &add.val);
+                super::check_lvalue_rvalue(context, &add.from, &add.val);
                 format!(
-                    "add {}, {}",
-                    add.to.codegen_string(context),
+                    "sub {}, {}",
+                    add.from.codegen_string(context),
                     add.val.codegen_string(context)
                 )
             }

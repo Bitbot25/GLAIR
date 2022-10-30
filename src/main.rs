@@ -12,6 +12,7 @@ use compile::CompileIntoBlock;
 fn main() {
     let x_0 = ssa::Variable::new("x", typing::Type::U32);
     let y_0 = ssa::Variable::new("y", typing::Type::U32);
+    let y_1 = y_0.ssa_bump();
 
     /*let bb = bb::BasicBlock {
         terminator: bb::Terminator::Void,
@@ -29,6 +30,7 @@ fn main() {
         ins_list: vec![
             ssa::Ins::Assign(x_0, ssa::RValue::Lit(ssa::Literal::U32(10))),
             ssa::Ins::Assign(y_0, ssa::RValue::Variable(x_0)),
+            ssa::Ins::Sub(y_1, ssa::RValue::Variable(y_0), ssa::RValue::Variable(x_0)),
         ],
     };
     let compiled_rtl = bb.compile_into_block();
@@ -36,13 +38,12 @@ fn main() {
     codegen_ctx
         .pseudo_reg_mappings
         .insert(0, rtl::PhysRegister::Amd64(rtl::amd64::Amd64Register::Eax));
-    codegen_ctx.pseudo_reg_mappings.insert(
-        1,
-        rtl::PhysRegister::Amd64Memory(rtl::amd64::Amd64Memory::Register(
-            DWORD_SZ,
-            rtl::amd64::Amd64Register::Ecx,
-        )),
-    );
+    codegen_ctx
+        .pseudo_reg_mappings
+        .insert(1, rtl::PhysRegister::Amd64(rtl::amd64::Amd64Register::Ecx));
+    codegen_ctx
+        .pseudo_reg_mappings
+        .insert(2, rtl::PhysRegister::Amd64(rtl::amd64::Amd64Register::Ecx));
 
     println!("{}", compiled_rtl);
     println!("{}", compiled_rtl.codegen_string(&mut codegen_ctx));
