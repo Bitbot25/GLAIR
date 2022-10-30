@@ -2,16 +2,6 @@ use crate::rtl;
 use crate::ssa;
 use crate::typing::Typed;
 
-fn rtl_rvalue_from_ssa(context: &mut super::CompileContext, ssa: &ssa::RValue) -> rtl::RValue {
-    match ssa {
-        ssa::RValue::Lit(lit) => rtl::RValue::Lit(match lit {
-            ssa::Literal::U32(val) => rtl::Lit::LitU32(*val),
-            _ => todo!("Many literal types"),
-        }),
-        ssa::RValue::Variable(var) => rtl::RValue::Register(context.acquire_variable_register(var)),
-    }
-}
-
 pub(super) fn compile(
     dest: &ssa::Variable,
     a: &ssa::RValue,
@@ -23,8 +13,8 @@ pub(super) fn compile(
     assert_eq!(a.typ(), b.typ());
 
     let dest_reg = context.acquire_variable_register(dest);
-    let a_reg = rtl_rvalue_from_ssa(context, a);
-    let b_reg = rtl_rvalue_from_ssa(context, b);
+    let a_reg = super::rtl_rvalue_from_ssa(context, a);
+    let b_reg = super::rtl_rvalue_from_ssa(context, b);
 
     // This could be optimized to a lea instruction in amd64
     ops.push(rtl::Op::Copy(rtl::OpCopy {

@@ -71,3 +71,13 @@ impl CompileIntoOps for ssa::Ins {
         }
     }
 }
+
+fn rtl_rvalue_from_ssa(context: &mut CompileContext, ssa: &ssa::RValue) -> rtl::RValue {
+    match ssa {
+        ssa::RValue::Lit(lit) => rtl::RValue::Lit(match lit {
+            ssa::Literal::U32(val) => rtl::Lit::LitU32(*val),
+            _ => todo!("Many literal types"),
+        }),
+        ssa::RValue::Variable(var) => rtl::RValue::Register(context.acquire_variable_register(var)),
+    }
+}

@@ -10,14 +10,6 @@ pub(super) fn compile(
 ) {
     assert_eq!(dest.typ(), val.typ());
     let dest_reg = context.acquire_variable_register(dest);
-    let from = match val {
-        ssa::RValue::Lit(inline) => rtl::RValue::Lit(match inline {
-            ssa::Literal::U32(val) => rtl::Lit::LitU32(*val),
-            _ => todo!(),
-        }),
-        ssa::RValue::Variable(variable) => {
-            rtl::RValue::Register(context.acquire_variable_register(variable))
-        }
-    };
+    let from = super::rtl_rvalue_from_ssa(context, val);
     ops.push(rtl::Op::Copy(rtl::OpCopy { to: dest_reg, from }));
 }
