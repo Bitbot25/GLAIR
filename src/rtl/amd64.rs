@@ -1,6 +1,6 @@
-use crate::codegen::{QWORD_SZ, DWORD_SZ};
+use crate::codegen::{DWORD_SZ, QWORD_SZ};
 
-#[derive(Debug, Clone)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub enum Amd64Memory {
     Register(usize, Amd64Register),
     Addr(usize, isize),
@@ -18,18 +18,18 @@ impl Amd64Memory {
                 let sz_b = operands.1.sz();
                 assert_eq!(sz_a, sz_b);
                 sz_a
-            },
+            }
             Amd64Memory::Sub(operands) => {
                 let sz_a = operands.0.sz();
                 let sz_b = operands.1.sz();
                 assert_eq!(sz_a, sz_b);
                 sz_a
-            },
+            }
         }
     }
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(PartialEq, Eq, Debug, Copy, Clone)]
 pub enum Amd64Register {
     Eax,
     Ecx,

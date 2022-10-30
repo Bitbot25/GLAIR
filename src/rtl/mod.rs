@@ -5,7 +5,7 @@ use crate::codegen;
 pub mod amd64;
 pub mod debug;
 
-#[derive(Debug, Clone)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub enum PhysRegister {
     Amd64(amd64::Amd64Register),
     Amd64Memory(amd64::Amd64Memory),
@@ -20,7 +20,7 @@ impl PhysRegister {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(PartialEq, Eq, Copy, Clone)]
 pub struct Register(pub usize);
 
 pub enum Lit {
