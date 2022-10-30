@@ -1,23 +1,36 @@
 use super::typing::{self, Typed};
-use std::fmt;
+use std::{fmt, hash::Hash, hash::Hasher};
 
-#[derive(Hash, Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct Variable {
     ver: usize,
+    id: usize,
     name: &'static str,
     typ: typing::Type,
 }
 
+impl Hash for Variable {
+    fn hash<H: Hasher>(&self, hasher: &mut H) {
+        hasher.write_usize(self.id);
+    }
+}
+
 impl Variable {
-    pub fn new(name: &'static str, typ: typing::Type) -> Variable {
-        Variable { name, ver: 0, typ }
+    pub fn new(name: &'static str, id: usize, typ: typing::Type) -> Variable {
+        Variable {
+            name,
+            id,
+            ver: 0,
+            typ,
+        }
     }
 
     pub fn ssa_bump(&self) -> Variable {
         Variable {
             name: self.name,
-            ver: self.ver + 1,
             typ: self.typ,
+            id: self.id,
+            ver: self.ver + 1,
         }
     }
 }
