@@ -1,12 +1,11 @@
-mod codegen;
-mod compile;
-mod rtl;
-mod ssa;
-mod typing;
+use glair::codegen;
+use glair::compile;
+use glair::rtl;
+use glair::ssa;
+use glair::typing;
 
 use codegen::Codegen;
 use compile::CompileIntoBlock;
-// use rtl::Codegen;
 
 fn main() {
     let x_0 = ssa::Variable::new("x", 0, typing::Type::U32);
