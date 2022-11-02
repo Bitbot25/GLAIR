@@ -26,9 +26,18 @@ fn main() {
     let bb = ssa::BasicBlock {
         terminator: ssa::Terminator::Void,
         ins_list: vec![
-            ssa::Ins::Assign(x_0, ssa::RValue::Lit(ssa::Literal::U32(10))),
-            ssa::Ins::Assign(y_0, ssa::RValue::Variable(x_0)),
-            ssa::Ins::Sub(y_1, ssa::RValue::Variable(y_0), ssa::RValue::Variable(x_0)),
+            ssa::Ins::Assign(
+                x_0,
+                ssa::RValue::Flat(ssa::FlatRValue::Lit(ssa::Literal::U32(10))),
+            ),
+            ssa::Ins::Assign(y_0, ssa::RValue::Flat(ssa::FlatRValue::Var(x_0))),
+            ssa::Ins::Assign(
+                y_1,
+                ssa::RValue::BinOp(ssa::BinOp::Sub(
+                    ssa::FlatRValue::Var(y_0),
+                    ssa::FlatRValue::Var(x_0),
+                )),
+            ),
         ],
     };
     let compiled_rtl = bb.compile_into_block();

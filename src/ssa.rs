@@ -72,17 +72,66 @@ impl fmt::Display for Literal {
 }
 
 #[derive(Debug)]
-pub enum RValue {
+pub enum BinOp {
+    Sub(FlatRValue, FlatRValue),
+}
+
+impl fmt::Display for BinOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            BinOp::Sub(a, b) => write!(f, "(sub {} {})", a, b),
+        }
+    }
+}
+
+impl typing::Typed for BinOp {
+    #[inline]
+    fn typ(&self) -> typing::Type {
+        match self {
+            BinOp::Sub(a, b) => {
+                assert_eq!(a.typ(), b.typ());
+                a.typ()
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum FlatRValue {
     Lit(Literal),
-    Variable(Variable),
+    Var(Variable),
+}
+
+impl typing::Typed for FlatRValue {
+    fn typ(&self) -> typing::Type {
+        match self {
+            FlatRValue::Lit(lit) => lit.typ(),
+            FlatRValue::Var(var) => var.typ(),
+        }
+    }
+}
+
+impl fmt::Display for FlatRValue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            FlatRValue::Lit(lit) => fmt::Display::fmt(lit, f),
+            FlatRValue::Var(var) => fmt::Display::fmt(var, f),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum RValue {
+    BinOp(BinOp),
+    Flat(FlatRValue),
 }
 
 impl typing::Typed for RValue {
     #[inline]
     fn typ(&self) -> typing::Type {
         match self {
-            RValue::Lit(inline) => inline.typ(),
-            RValue::Variable(var) => var.typ(),
+            RValue::BinOp(op) => op.typ(),
+            RValue::Flat(flat) => flat.typ(),
         }
     }
 }
@@ -94,18 +143,8 @@ impl RValue {
     }
 }
 
-impl fmt::Display for RValue {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            RValue::Lit(inline) => fmt::Display::fmt(inline, f),
-            RValue::Variable(var) => fmt::Display::fmt(var, f),
-        }
-    }
-}
-
 #[derive(Debug)]
 pub enum Ins {
-    Sub(Variable, /* = */ RValue, /* - */ RValue),
     Assign(Variable, /* <- */ RValue),
 }
 

@@ -1,5 +1,4 @@
 mod assign;
-mod sub;
 
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
@@ -66,18 +65,18 @@ impl CompileIntoOps for ssa::Ins {
     fn compile_into_ops(&self, ops: &mut Vec<rtl::Op>, context: &mut CompileContext) {
         match self {
             ssa::Ins::Assign(dest, val) => assign::compile(dest, val, ops, context),
-            ssa::Ins::Sub(dest, a, b) => sub::compile(dest, a, b, ops, context),
             _ => todo!(),
         }
     }
 }
 
-fn rtl_rvalue_from_ssa(context: &mut CompileContext, ssa: &ssa::RValue) -> rtl::RValue {
+#[inline]
+fn rtl_rvalue_from_flat_ssa(context: &mut CompileContext, ssa: &ssa::FlatRValue) -> rtl::RValue {
     match ssa {
-        ssa::RValue::Lit(lit) => rtl::RValue::Lit(match lit {
+        ssa::FlatRValue::Lit(lit) => rtl::RValue::Lit(match lit {
             ssa::Literal::U32(val) => rtl::Lit::LitU32(*val),
             _ => todo!("Many literal types"),
         }),
-        ssa::RValue::Variable(var) => rtl::RValue::Register(context.acquire_variable_register(var)),
+        ssa::FlatRValue::Var(var) => rtl::RValue::Register(context.acquire_variable_register(var)),
     }
 }
