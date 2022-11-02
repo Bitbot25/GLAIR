@@ -65,7 +65,6 @@ impl CompileIntoOps for ssa::Ins {
     fn compile_into_ops(&self, ops: &mut Vec<rtl::Op>, context: &mut CompileContext) {
         match self {
             ssa::Ins::Assign(dest, val) => assign::compile(dest, val, ops, context),
-            _ => todo!(),
         }
     }
 }

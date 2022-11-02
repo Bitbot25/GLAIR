@@ -4,7 +4,7 @@ use std::fmt::{Display, Formatter};
 impl Display for amd64::Amd64Memory {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            amd64::Amd64Memory::Register(sz, reg) => write!(f, "(amd64_reg {})", reg.name()),
+            amd64::Amd64Memory::Register(_sz, reg) => write!(f, "(amd64_reg {})", reg.name()),
             amd64::Amd64Memory::Addr(sz, addr) => write!(f, "(amd64_mem_addr {} {})", sz, addr),
             amd64::Amd64Memory::Add(operands) => {
                 write!(f, "(amd64_mem_add {} {})", operands.0, operands.1)
