@@ -28,6 +28,10 @@ impl Variable {
             ver: self.ver + 1,
         }
     }
+
+    pub fn id(&self) -> usize {
+        self.id
+    }
 }
 
 impl typing::Typed for Variable {
