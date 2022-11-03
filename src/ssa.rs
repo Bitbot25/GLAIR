@@ -3,7 +3,6 @@ use std::{fmt, hash::Hash, hash::Hasher};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct Variable {
-    ver: usize,
     id: usize,
     name: &'static str,
     typ: typing::Type,
@@ -16,8 +15,8 @@ impl Hash for Variable {
 }
 
 impl Variable {
-    pub fn new(name: &'static str, id: usize, ver: usize, typ: typing::Type) -> Variable {
-        Variable { name, id, ver, typ }
+    pub fn new(name: &'static str, id: usize, typ: typing::Type) -> Variable {
+        Variable { name, id, typ }
     }
 
     pub fn ssa_bump(&self) -> Variable {
@@ -25,7 +24,6 @@ impl Variable {
             name: self.name,
             typ: self.typ,
             id: self.id,
-            ver: self.ver + 1,
         }
     }
 
@@ -42,7 +40,7 @@ impl typing::Typed for Variable {
 
 impl fmt::Display for Variable {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}_{}", self.name, self.ver)
+        write!(f, "{}_{}", self.name, self.id)
     }
 }
 
