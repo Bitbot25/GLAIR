@@ -8,8 +8,8 @@ use codegen::Codegen;
 use compile::CompileIntoBlock;
 
 fn main() {
-    let x_0 = ssa::Variable::new("x", 0, typing::Type::U32);
-    let y_0 = ssa::Variable::new("y", 1, typing::Type::U32);
+    let x_0 = ssa::Variable::new("x", 0, 0, typing::Type::U32);
+    let y_0 = ssa::Variable::new("y", 1, 0, typing::Type::U32);
     let y_1 = y_0.ssa_bump();
 
     /*let bb = bb::BasicBlock {

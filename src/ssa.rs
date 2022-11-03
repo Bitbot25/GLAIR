@@ -16,13 +16,8 @@ impl Hash for Variable {
 }
 
 impl Variable {
-    pub fn new(name: &'static str, id: usize, typ: typing::Type) -> Variable {
-        Variable {
-            name,
-            id,
-            ver: 0,
-            typ,
-        }
+    pub fn new(name: &'static str, id: usize, ver: usize, typ: typing::Type) -> Variable {
+        Variable { name, id, ver, typ }
     }
 
     pub fn ssa_bump(&self) -> Variable {
