@@ -1,5 +1,3 @@
-use crate::codegen::{DWORD_SZ, QWORD_SZ};
-
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub enum Amd64Memory {
     Register(usize, Amd64Register),
@@ -29,7 +27,7 @@ impl Amd64Memory {
     }
 }
 
-#[derive(PartialEq, Eq, Debug, Copy, Clone)]
+#[derive(PartialEq, Eq, Hash, Debug, Copy, Clone)]
 pub enum Amd64Register {
     Eax,
     Ecx,
@@ -54,8 +52,8 @@ impl Amd64Register {
 
     pub fn sz(&self) -> usize {
         match self {
-            Amd64Register::Eax | Amd64Register::Ecx | Amd64Register::Esp => DWORD_SZ,
-            Amd64Register::Rax | Amd64Register::Rcx | Amd64Register::Rsp => QWORD_SZ,
+            Amd64Register::Eax | Amd64Register::Ecx | Amd64Register::Esp => 4,
+            Amd64Register::Rax | Amd64Register::Rcx | Amd64Register::Rsp => 8,
         }
     }
 }

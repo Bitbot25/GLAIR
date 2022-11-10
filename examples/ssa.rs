@@ -40,14 +40,14 @@ fn main() {
             ),
         ],
     };
-    let compiled_rtl = bb.compile_into_block();
+    let mut compiled_rtl = bb.compile_into_block();
     let mut codegen_ctx = codegen::CodegenContext::default();
-    codegen_ctx
-        .pseudo_reg_mappings
-        .insert(0, rtl::PhysRegister::Amd64(rtl::amd64::Amd64Register::Eax));
-    codegen_ctx
-        .pseudo_reg_mappings
-        .insert(1, rtl::PhysRegister::Amd64(rtl::amd64::Amd64Register::Ecx));
+
+    let reg_map = [
+        rtl::RealRegister::Amd64(rtl::amd64::Amd64Register::Eax),
+        rtl::RealRegister::Amd64(rtl::amd64::Amd64Register::Ecx),
+    ];
+    rtl::promote_registers_in_ops(&mut compiled_rtl.ops, |pseudo| reg_map[pseudo.n]);
 
     println!("{}", compiled_rtl);
     println!("{}", compiled_rtl.codegen_string(&mut codegen_ctx));

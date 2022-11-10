@@ -1,4 +1,4 @@
-use super::{Codegen, CodegenContext, BYTE_SZ, DWORD_SZ, QWORD_SZ, WORD_SZ};
+use super::{Codegen, CodegenContext};
 use crate::rtl;
 
 impl Codegen for rtl::amd64::Amd64Register {
@@ -16,21 +16,10 @@ impl Codegen for rtl::Lit {
     }
 }
 
-impl Codegen for rtl::PhysRegister {
+impl Codegen for rtl::RealRegister {
     fn codegen_string(&self, context: &mut CodegenContext) -> String {
         match self {
-            rtl::PhysRegister::Amd64(reg) => reg.codegen_string(context),
-            rtl::PhysRegister::Amd64Memory(mem) => format!(
-                "{} [{}]",
-                match mem.sz() {
-                    BYTE_SZ => "byte",
-                    WORD_SZ => "word",
-                    DWORD_SZ => "dword",
-                    QWORD_SZ => "qword",
-                    _ => panic!("unworded size!"),
-                },
-                mem.codegen_string(context)
-            ),
+            rtl::RealRegister::Amd64(reg) => reg.codegen_string(context),
         }
     }
 }
@@ -56,10 +45,7 @@ impl Codegen for rtl::amd64::Amd64Memory {
 
 impl Codegen for rtl::Register {
     fn codegen_string(&self, context: &mut CodegenContext) -> String {
-        // FIXME: Do i really need to clone here? Is there a better way?:
-        let phys_reg =
-            super::unwrap_phys_register(context.pseudo_reg_mappings.get(&self.0), self.0).clone();
-        phys_reg.codegen_string(context)
+        self.unwrap_real().codegen_string(context)
     }
 }
 
@@ -77,7 +63,7 @@ impl Codegen for rtl::Op {
         match self {
             rtl::Op::Copy(cp) => {
                 // Check that both operands are of the same size.
-                super::check_lvalue_rvalue(context, &cp.to, &cp.from);
+                super::check_lvalue_rvalue(&cp.to, &cp.from);
                 format!(
                     "mov {}, {}",
                     cp.to.codegen_string(context),
@@ -86,7 +72,7 @@ impl Codegen for rtl::Op {
             }
             rtl::Op::Sub(add) => {
                 // Check that both operands are of the same size.
-                super::check_lvalue_rvalue(context, &add.from, &add.val);
+                super::check_lvalue_rvalue(&add.from, &add.val);
                 format!(
                     "sub {}, {}",
                     add.from.codegen_string(context),

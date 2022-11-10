@@ -16,18 +16,22 @@ impl Display for amd64::Amd64Memory {
     }
 }
 
-impl Display for PhysRegister {
+impl Display for RealRegister {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            PhysRegister::Amd64(reg) => write!(f, "(reg_amd64 {}", reg.name()),
-            PhysRegister::Amd64Memory(memory) => Display::fmt(memory, f),
+            RealRegister::Amd64(reg) => write!(f, "(reg_amd64 {}", reg.name()),
         }
     }
 }
 
 impl Display for Register {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "(reg {})", self.0)
+        match self {
+            Register::Pseudo(PseudoRegister { n, bytes }) => {
+                write!(f, "(reg {} {})", n, bytes)
+            }
+            Register::Real(reg) => Display::fmt(reg, f),
+        }
     }
 }
 

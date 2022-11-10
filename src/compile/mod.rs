@@ -7,12 +7,13 @@ use std::hash::Hasher;
 
 use crate::rtl;
 use crate::ssa;
+use crate::typing::Typed;
 
 #[derive(Default)]
 pub struct CompileContext {
     pub(self) reg_number: usize,
     // u64 is the hash of the ssa::Variable
-    pub(self) registers: HashMap<u64, rtl::Register>,
+    pub(self) registers: HashMap<u64, rtl::PseudoRegister>,
 }
 
 impl CompileContext {
@@ -28,11 +29,14 @@ impl CompileContext {
         let val = self.registers.get(&hash_of_var);
 
         match val {
-            Some(reg) => *reg,
+            Some(reg) => rtl::Register::Pseudo(*reg),
             None => {
-                let reg = rtl::Register(self.next_pseudo_reg());
+                let reg = rtl::PseudoRegister {
+                    n: self.next_pseudo_reg(),
+                    bytes: var.typ().mem_size(),
+                };
                 self.registers.insert(hash_of_var, reg);
-                reg
+                rtl::Register::Pseudo(reg)
             }
         }
     }
