@@ -1,21 +1,6 @@
 use super::*;
 use std::fmt::{Display, Formatter};
 
-impl Display for amd64::Amd64Memory {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            amd64::Amd64Memory::Register(_sz, reg) => write!(f, "(amd64_reg {})", reg.name()),
-            amd64::Amd64Memory::Addr(sz, addr) => write!(f, "(amd64_mem_addr {} {})", sz, addr),
-            amd64::Amd64Memory::Add(operands) => {
-                write!(f, "(amd64_mem_add {} {})", operands.0, operands.1)
-            }
-            amd64::Amd64Memory::Sub(operands) => {
-                write!(f, "(amd64_mem_sub {} {})", operands.0, operands.1)
-            }
-        }
-    }
-}
-
 impl Display for RealRegister {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -27,7 +12,7 @@ impl Display for RealRegister {
 impl Display for Register {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            Register::Pseudo(PseudoRegister { n, bytes }) => {
+            Register::Vir(VirRegister { n, bytes }) => {
                 write!(f, "(reg {} {})", n, bytes)
             }
             Register::Real(reg) => Display::fmt(reg, f),
@@ -53,9 +38,27 @@ impl Display for RValue {
     }
 }
 
+impl Display for OpAdd {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "(add {} {})", self.to, self.val)
+    }
+}
+
 impl Display for OpSub {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "(sub {} {})", self.from, self.val)
+    }
+}
+
+impl Display for OpMul {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "(mul {} {})", self.val, self.with)
+    }
+}
+
+impl Display for OpDiv {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "(div {} {})", self.val, self.with)
     }
 }
 
@@ -69,7 +72,10 @@ impl Display for Op {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Op::Copy(copy) => Display::fmt(copy, f),
-            Op::Sub(add) => Display::fmt(add, f),
+            Op::Add(add) => Display::fmt(add, f),
+            Op::Sub(sub) => Display::fmt(sub, f),
+            Op::Mul(mul) => Display::fmt(mul, f),
+            Op::Div(div) => Display::fmt(div, f),
         }
     }
 }

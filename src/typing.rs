@@ -14,5 +14,5 @@ impl Type {
 }
 
 pub trait Typed {
-    fn typ(&self) -> Type;
+    fn data_ty(&self) -> Type;
 }

@@ -24,25 +24,6 @@ impl Codegen for rtl::RealRegister {
     }
 }
 
-impl Codegen for rtl::amd64::Amd64Memory {
-    fn codegen_string(&self, context: &mut CodegenContext) -> String {
-        match self {
-            rtl::amd64::Amd64Memory::Register(_sz, reg) => reg.codegen_string(context),
-            rtl::amd64::Amd64Memory::Addr(_sz, addr) => addr.to_string(),
-            rtl::amd64::Amd64Memory::Add(operands) => format!(
-                "{}+{}",
-                operands.0.codegen_string(context),
-                operands.1.codegen_string(context)
-            ),
-            rtl::amd64::Amd64Memory::Sub(operands) => format!(
-                "{}-{}",
-                operands.0.codegen_string(context),
-                operands.1.codegen_string(context)
-            ),
-        }
-    }
-}
-
 impl Codegen for rtl::Register {
     fn codegen_string(&self, context: &mut CodegenContext) -> String {
         self.unwrap_real().codegen_string(context)
@@ -70,15 +51,25 @@ impl Codegen for rtl::Op {
                     cp.from.codegen_string(context)
                 )
             }
-            rtl::Op::Sub(add) => {
-                // Check that both operands are of the same size.
-                super::check_lvalue_rvalue(&add.from, &add.val);
+            rtl::Op::Add(add) => {
+                super::check_lvalue_rvalue(&add.to, &add.val);
                 format!(
-                    "sub {}, {}",
-                    add.from.codegen_string(context),
+                    "add {}, {}",
+                    add.to.codegen_string(context),
                     add.val.codegen_string(context)
                 )
             }
+            rtl::Op::Sub(sub) => {
+                // Check that both operands are of the same size.
+                super::check_lvalue_rvalue(&sub.from, &sub.val);
+                format!(
+                    "sub {}, {}",
+                    sub.from.codegen_string(context),
+                    sub.val.codegen_string(context)
+                )
+            }
+            rtl::Op::Mul(..) => todo!("codegen amd64 nasm for mul"),
+            rtl::Op::Div(..) => todo!("codegen amd64 nasm for div"),
         }
     }
 }

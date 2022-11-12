@@ -1,11 +1,44 @@
+use crate::rtl;
+
 use super::typing::{self, Typed};
 use std::{fmt, hash::Hash, hash::Hasher};
 
+#[derive(Default)]
+pub struct GLIRSupervisor {
+    variables: Vec<Variable>,
+}
+
+impl GLIRSupervisor {
+    pub fn new() -> GLIRSupervisor {
+        Self::default()
+    }
+
+    pub fn create_var(&mut self, ty: typing::Type) -> Variable {
+        let v = Variable {
+            id: self.variables.len(),
+            ty,
+        };
+        self.variables.push(v);
+        v
+    }
+
+    pub fn create_descendant(&mut self, v: Variable) -> Variable {
+        assert!(self.variables.contains(&v));
+        Variable {
+            id: self.variables.len(),
+            ty: v.data_ty(),
+        }
+    }
+
+    pub fn vars(&self) -> &Vec<Variable> {
+        &self.variables
+    }
+}
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct Variable {
-    id: usize,
-    name: &'static str,
-    typ: typing::Type,
+    pub(self) id: usize,
+    pub(self) ty: typing::Type,
 }
 
 impl Hash for Variable {
@@ -15,15 +48,19 @@ impl Hash for Variable {
 }
 
 impl Variable {
-    pub fn new(name: &'static str, id: usize, typ: typing::Type) -> Variable {
-        Variable { name, id, typ }
-    }
-
+    /*
     pub fn ssa_bump(&self) -> Variable {
         Variable {
             name: self.name,
             typ: self.typ,
             id: self.id,
+        }
+    }*/
+
+    pub fn as_vir_reg(&self) -> rtl::VirRegister {
+        rtl::VirRegister {
+            bytes: self.data_ty().mem_size(),
+            n: self.id,
         }
     }
 
@@ -33,25 +70,32 @@ impl Variable {
 }
 
 impl typing::Typed for Variable {
-    fn typ(&self) -> typing::Type {
-        self.typ
+    fn data_ty(&self) -> typing::Type {
+        self.ty
     }
 }
 
 impl fmt::Display for Variable {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}_{}", self.name, self.id)
+        write!(f, "%{}", self.id)
     }
 }
 
-#[derive(Debug)]
+pub enum BinOpTy {
+    Add,
+    Sub,
+    Mul,
+    Div,
+}
+
+#[derive(Copy, Clone, Debug)]
 pub enum Literal {
     I32(i32),
     U32(u32),
 }
 
 impl typing::Typed for Literal {
-    fn typ(&self) -> typing::Type {
+    fn data_ty(&self) -> typing::Type {
         match self {
             Literal::I32(..) => typing::Type::I32,
             Literal::U32(..) => typing::Type::U32,
@@ -69,86 +113,75 @@ impl fmt::Display for Literal {
 }
 
 #[derive(Debug)]
-pub enum BinOp {
-    Sub(FlatRValue, FlatRValue),
-}
-
-impl fmt::Display for BinOp {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            BinOp::Sub(a, b) => write!(f, "(sub {} {})", a, b),
-        }
-    }
-}
-
-impl typing::Typed for BinOp {
-    #[inline]
-    fn typ(&self) -> typing::Type {
-        match self {
-            BinOp::Sub(a, b) => {
-                assert_eq!(a.typ(), b.typ());
-                a.typ()
-            }
-        }
-    }
-}
-
-#[derive(Debug)]
-pub enum FlatRValue {
-    Lit(Literal),
-    Var(Variable),
-}
-
-impl typing::Typed for FlatRValue {
-    fn typ(&self) -> typing::Type {
-        match self {
-            FlatRValue::Lit(lit) => lit.typ(),
-            FlatRValue::Var(var) => var.typ(),
-        }
-    }
-}
-
-impl fmt::Display for FlatRValue {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            FlatRValue::Lit(lit) => fmt::Display::fmt(lit, f),
-            FlatRValue::Var(var) => fmt::Display::fmt(var, f),
-        }
-    }
-}
-
-#[derive(Debug)]
 pub enum RValue {
-    BinOp(BinOp),
-    Flat(FlatRValue),
+    Var(Variable),
+    Lit(Literal),
 }
 
 impl typing::Typed for RValue {
-    #[inline]
-    fn typ(&self) -> typing::Type {
+    fn data_ty(&self) -> typing::Type {
         match self {
-            RValue::BinOp(op) => op.typ(),
-            RValue::Flat(flat) => flat.typ(),
+            RValue::Lit(lit) => lit.data_ty(),
+            RValue::Var(var) => var.data_ty(),
         }
     }
 }
 
-impl RValue {
-    #[inline]
-    pub fn mem_size(&self) -> usize {
-        self.typ().mem_size()
+impl fmt::Display for RValue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            RValue::Lit(lit) => fmt::Display::fmt(lit, f),
+            RValue::Var(var) => fmt::Display::fmt(var, f),
+        }
     }
 }
 
 #[derive(Debug)]
 pub enum Ins {
-    Assign(Variable, /* <- */ RValue),
+    Add(Variable, /* = */ RValue, /* + */ RValue),
+    Sub(Variable, /* = */ RValue, /* - */ RValue),
+    Mul(Variable, /* = */ RValue, /* * */ RValue),
+    Div(Variable, /* = */ RValue, /* / */ RValue),
+    Cpy(Variable, /* = */ RValue),
 }
 
-#[derive(Debug)]
+#[derive(Default, Debug)]
 pub struct BasicBlock {
-    pub ins_list: Vec<Ins>,
-    pub terminator: Terminator,
+    pub(crate) ins_list: Vec<Ins>,
+    // pub(self) terminator: Terminator,
+}
+
+impl BasicBlock {
+    pub fn new() -> BasicBlock {
+        Self::default()
+    }
+
+    pub fn emitter<'a>(&'a mut self) -> BasicBlockEmitter<'a> {
+        BasicBlockEmitter { bb: self }
+    }
+}
+
+pub struct BasicBlockEmitter<'bb> {
+    bb: &'bb mut BasicBlock,
+}
+
+impl<'bb> BasicBlockEmitter<'bb> {
+    pub fn emit_cpy(&mut self, lhs: Variable, rhs: RValue) {
+        self.bb.ins_list.push(Ins::Cpy(lhs, rhs));
+    }
+
+    pub fn emit_lit(&mut self, lhs: Variable, lit: Literal) {
+        self.emit_cpy(lhs, RValue::Lit(lit));
+    }
+
+    pub fn emit_binop(&mut self, lhs: Variable, a: RValue, b: RValue, ty: BinOpTy) {
+        self.bb.ins_list.push(match ty {
+            BinOpTy::Add => Ins::Add(lhs, a, b),
+            BinOpTy::Sub => Ins::Sub(lhs, a, b),
+            BinOpTy::Mul => Ins::Mul(lhs, a, b),
+            BinOpTy::Div => Ins::Div(lhs, a, b),
+        })
+    }
 }
 
 #[derive(Debug)]

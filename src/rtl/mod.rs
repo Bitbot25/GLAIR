@@ -15,14 +15,14 @@ impl RealRegister {
 }
 
 #[derive(PartialEq, Eq, Hash, Debug, Copy, Clone)]
-pub struct PseudoRegister {
+pub struct VirRegister {
     pub bytes: usize,
     pub n: usize,
 }
 
 #[derive(PartialEq, Eq, Hash, Copy, Clone)]
 pub enum Register {
-    Pseudo(PseudoRegister),
+    Vir(VirRegister),
     Real(RealRegister),
 }
 
@@ -30,7 +30,7 @@ impl Register {
     #[inline]
     pub fn unwrap_real(&self) -> &RealRegister {
         match self {
-            Register::Pseudo(pseudo) => panic!("Pseudo register {} was not resolved.", pseudo.n),
+            Register::Vir(pseudo) => panic!("Pseudo register {} was not resolved.", pseudo.n),
             Register::Real(real) => real,
         }
     }
@@ -38,7 +38,7 @@ impl Register {
     pub fn sz(&self) -> usize {
         match self {
             Register::Real(real) => real.sz(),
-            Register::Pseudo(pseudo) => pseudo.bytes,
+            Register::Vir(pseudo) => pseudo.bytes,
         }
     }
 }
@@ -76,14 +76,32 @@ pub struct OpCopy {
     pub from: RValue,
 }
 
+pub struct OpAdd {
+    pub to: Register,
+    pub val: RValue,
+}
+
 pub struct OpSub {
     pub from: Register,
     pub val: RValue,
 }
 
+pub struct OpMul {
+    pub val: Register,
+    pub with: RValue,
+}
+
+pub struct OpDiv {
+    pub val: Register,
+    pub with: RValue,
+}
+
 pub enum Op {
     Copy(OpCopy),
+    Add(OpAdd),
     Sub(OpSub),
+    Mul(OpMul),
+    Div(OpDiv),
 }
 
 pub type Ops = Vec<Op>;
@@ -94,39 +112,48 @@ pub struct Block {
     pub metadata: (),
 }
 
-fn promote_register(reg: &mut Register, mut promote: impl FnMut(PseudoRegister) -> RealRegister) {
+fn promote_register(reg: &mut Register, mut promote: impl FnMut(&VirRegister) -> RealRegister) {
     match reg {
-        Register::Pseudo(pseudo) => *reg = Register::Real(promote(*pseudo)),
+        Register::Vir(vir) => *reg = Register::Real(promote(vir)),
         Register::Real(..) => (),
     }
 }
 
-fn promote_rvalue(rvalue: &mut RValue, promote: impl FnMut(PseudoRegister) -> RealRegister) {
+fn promote_rvalue(rvalue: &mut RValue, promote: impl FnMut(&VirRegister) -> RealRegister) {
     match rvalue {
         RValue::Lit(..) => (),
         RValue::Register(reg) => promote_register(reg, promote),
     }
 }
 
-pub fn promote_registers_in_op(
-    op: &mut Op,
-    mut promote: impl FnMut(PseudoRegister) -> RealRegister,
-) {
+pub fn promote_registers_in_op(op: &mut Op, mut promote: impl FnMut(&VirRegister) -> RealRegister) {
     match op {
         Op::Copy(OpCopy { to, from }) => {
             promote_register(to, &mut promote);
             promote_rvalue(from, &mut promote);
         }
+        Op::Add(OpAdd { to, val }) => {
+            promote_register(to, &mut promote);
+            promote_rvalue(val, &mut promote);
+        }
         Op::Sub(OpSub { from, val }) => {
             promote_register(from, &mut promote);
             promote_rvalue(val, &mut promote);
+        }
+        Op::Mul(OpMul { val, with }) => {
+            promote_register(val, &mut promote);
+            promote_rvalue(with, &mut promote);
+        }
+        Op::Div(OpDiv { val, with }) => {
+            promote_register(val, &mut promote);
+            promote_rvalue(with, &mut promote);
         }
     }
 }
 
 pub fn promote_registers_in_ops(
     ops: &mut Ops,
-    mut promote: impl FnMut(PseudoRegister) -> RealRegister,
+    mut promote: impl FnMut(&VirRegister) -> RealRegister,
 ) {
     for op in ops {
         promote_registers_in_op(op, &mut promote);

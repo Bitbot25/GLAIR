@@ -1,46 +1,12 @@
-mod assign;
-
-use std::collections::hash_map::DefaultHasher;
-use std::collections::HashMap;
-use std::hash::Hash;
-use std::hash::Hasher;
+mod binop;
+mod cpy;
+pub mod ralloc;
 
 use crate::rtl;
 use crate::ssa;
-use crate::typing::Typed;
 
 #[derive(Default)]
-pub struct CompileContext {
-    pub(self) reg_number: usize,
-    // u64 is the hash of the ssa::Variable
-    pub(self) registers: HashMap<u64, rtl::PseudoRegister>,
-}
-
-impl CompileContext {
-    fn next_pseudo_reg(&mut self) -> usize {
-        self.reg_number += 1;
-        self.reg_number - 1
-    }
-
-    pub fn acquire_variable_register(&mut self, var: &ssa::Variable) -> rtl::Register {
-        let mut hasher = DefaultHasher::new();
-        var.hash(&mut hasher);
-        let hash_of_var = hasher.finish();
-        let val = self.registers.get(&hash_of_var);
-
-        match val {
-            Some(reg) => rtl::Register::Pseudo(*reg),
-            None => {
-                let reg = rtl::PseudoRegister {
-                    n: self.next_pseudo_reg(),
-                    bytes: var.typ().mem_size(),
-                };
-                self.registers.insert(hash_of_var, reg);
-                rtl::Register::Pseudo(reg)
-            }
-        }
-    }
-}
+pub struct CompileContext;
 
 pub trait CompileIntoBlock {
     fn compile_into_block(&self) -> rtl::Block;
@@ -66,20 +32,24 @@ impl CompileIntoBlock for ssa::BasicBlock {
 }
 
 impl CompileIntoOps for ssa::Ins {
-    fn compile_into_ops(&self, ops: &mut Vec<rtl::Op>, context: &mut CompileContext) {
+    fn compile_into_ops(&self, ops: &mut Vec<rtl::Op>, _context: &mut CompileContext) {
         match self {
-            ssa::Ins::Assign(dest, val) => assign::compile(dest, val, ops, context),
+            ssa::Ins::Add(dest, a, b) => binop::compile(dest, a, b, ssa::BinOpTy::Add, ops),
+            ssa::Ins::Sub(dest, a, b) => binop::compile(dest, a, b, ssa::BinOpTy::Sub, ops),
+            ssa::Ins::Mul(dest, a, b) => binop::compile(dest, a, b, ssa::BinOpTy::Mul, ops),
+            ssa::Ins::Div(dest, a, b) => binop::compile(dest, a, b, ssa::BinOpTy::Div, ops),
+            ssa::Ins::Cpy(dest, rhs) => cpy::compile(dest, rhs, ops),
         }
     }
 }
 
 #[inline]
-fn rtl_rvalue_from_flat_ssa(context: &mut CompileContext, ssa: &ssa::FlatRValue) -> rtl::RValue {
+fn rtl_rvalue_from_ssa(ssa: &ssa::RValue) -> rtl::RValue {
     match ssa {
-        ssa::FlatRValue::Lit(lit) => rtl::RValue::Lit(match lit {
+        ssa::RValue::Lit(lit) => rtl::RValue::Lit(match lit {
             ssa::Literal::U32(val) => rtl::Lit::LitU32(*val),
             _ => todo!("Many literal types"),
         }),
-        ssa::FlatRValue::Var(var) => rtl::RValue::Register(context.acquire_variable_register(var)),
+        ssa::RValue::Var(var) => rtl::RValue::Register(rtl::Register::Vir(var.as_vir_reg())),
     }
 }
