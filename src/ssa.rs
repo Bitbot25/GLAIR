@@ -156,31 +156,33 @@ impl BasicBlock {
         Self::default()
     }
 
-    pub fn emitter<'a>(&'a mut self) -> BasicBlockEmitter<'a> {
-        BasicBlockEmitter { bb: self }
+    pub fn emitter<'a>(&'a mut self, sv: &'a mut GLIRSupervisor) -> BasicBlockEmitter<'a> {
+        BasicBlockEmitter { bb: self, sv }
     }
 }
 
 pub struct BasicBlockEmitter<'bb> {
     bb: &'bb mut BasicBlock,
+    sv: &'bb mut GLIRSupervisor,
 }
 
 impl<'bb> BasicBlockEmitter<'bb> {
-    pub fn emit_cpy(&mut self, lhs: Variable, rhs: RValue) {
-        self.bb.ins_list.push(Ins::Cpy(lhs, rhs));
+    pub fn emit_cpy(&mut self, var: RValue) -> Variable {
+        let copy = self.sv.create_var(var.data_ty());
+        self.bb.ins_list.push(Ins::Cpy(copy, var));
+        copy
     }
 
-    pub fn emit_lit(&mut self, lhs: Variable, lit: Literal) {
-        self.emit_cpy(lhs, RValue::Lit(lit));
-    }
-
-    pub fn emit_binop(&mut self, lhs: Variable, a: RValue, b: RValue, ty: BinOpTy) {
+    pub fn emit_binop(&mut self, a: RValue, b: RValue, ty: BinOpTy) -> Variable {
+        assert_eq!(a.data_ty(), b.data_ty());
+        let res = self.sv.create_var(a.data_ty());
         self.bb.ins_list.push(match ty {
-            BinOpTy::Add => Ins::Add(lhs, a, b),
-            BinOpTy::Sub => Ins::Sub(lhs, a, b),
-            BinOpTy::Mul => Ins::Mul(lhs, a, b),
-            BinOpTy::Div => Ins::Div(lhs, a, b),
-        })
+            BinOpTy::Add => Ins::Add(res, a, b),
+            BinOpTy::Sub => Ins::Sub(res, a, b),
+            BinOpTy::Mul => Ins::Mul(res, a, b),
+            BinOpTy::Div => Ins::Div(res, a, b),
+        });
+        res
     }
 }
 

@@ -2,20 +2,14 @@ use compile::CompileIntoBlock;
 use glair::compile;
 use glair::rtl;
 use glair::ssa;
-use glair::typing;
 
 fn main() {
-    let mut sv = ssa::GLIRSupervisor::new();
-    let x_0 = sv.create_var(typing::Type::U32);
-    let y_0 = sv.create_var(typing::Type::U32);
-    let y_1 = sv.create_descendant(y_0);
-
     let mut bb = ssa::BasicBlock::new();
-    let mut emitter = bb.emitter();
-    emitter.emit_lit(x_0, ssa::Literal::U32(10));
-    emitter.emit_cpy(y_0, ssa::RValue::Var(x_0));
-    emitter.emit_binop(
-        y_1,
+    let mut sv = ssa::GLIRSupervisor::new();
+    let mut emitter = bb.emitter(&mut sv);
+    let x_0 = emitter.emit_cpy(ssa::RValue::Lit(ssa::Literal::U32(10)));
+    let y_0 = emitter.emit_cpy(ssa::RValue::Var(x_0));
+    let _y_1 = emitter.emit_binop(
         ssa::RValue::Var(y_0),
         ssa::RValue::Var(x_0),
         ssa::BinOpTy::Sub,
