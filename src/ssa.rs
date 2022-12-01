@@ -22,14 +22,6 @@ impl GLIRSupervisor {
         v
     }
 
-    pub fn create_descendant(&mut self, v: Variable) -> Variable {
-        assert!(self.variables.contains(&v));
-        Variable {
-            id: self.variables.len(),
-            ty: v.data_ty(),
-        }
-    }
-
     pub fn vars(&self) -> &Vec<Variable> {
         &self.variables
     }
@@ -66,6 +58,12 @@ impl Variable {
 
     pub fn id(&self) -> usize {
         self.id
+    }
+}
+
+impl From<Variable> for rtl::VirRegister {
+    fn from(v: Variable) -> Self {
+        v.as_vir_reg()
     }
 }
 
@@ -118,6 +116,18 @@ pub enum RValue {
     Lit(Literal),
 }
 
+impl From<Variable> for RValue {
+    fn from(v: Variable) -> Self {
+        RValue::Var(v)
+    }
+}
+
+impl From<Literal> for RValue {
+    fn from(lit: Literal) -> Self {
+        RValue::Lit(lit)
+    }
+}
+
 impl typing::Typed for RValue {
     fn data_ty(&self) -> typing::Type {
         match self {
@@ -148,7 +158,6 @@ pub enum Ins {
 #[derive(Default, Debug)]
 pub struct BasicBlock {
     pub(crate) ins_list: Vec<Ins>,
-    // pub(self) terminator: Terminator,
 }
 
 impl BasicBlock {
@@ -167,13 +176,20 @@ pub struct BasicBlockEmitter<'bb> {
 }
 
 impl<'bb> BasicBlockEmitter<'bb> {
-    pub fn emit_cpy(&mut self, var: RValue) -> Variable {
+    pub fn emit_cpy<R: Into<RValue>>(&mut self, var: R) -> Variable {
+        let var = var.into();
         let copy = self.sv.create_var(var.data_ty());
         self.bb.ins_list.push(Ins::Cpy(copy, var));
         copy
     }
 
-    pub fn emit_binop(&mut self, a: RValue, b: RValue, ty: BinOpTy) -> Variable {
+    pub fn emit_binop<A: Into<RValue>, B: Into<RValue>>(
+        &mut self,
+        a: A,
+        b: B,
+        ty: BinOpTy,
+    ) -> Variable {
+        let (a, b) = (a.into(), b.into());
         assert_eq!(a.data_ty(), b.data_ty());
         let res = self.sv.create_var(a.data_ty());
         self.bb.ins_list.push(match ty {
@@ -184,12 +200,4 @@ impl<'bb> BasicBlockEmitter<'bb> {
         });
         res
     }
-}
-
-#[derive(Debug)]
-#[allow(dead_code)]
-pub enum Terminator {
-    Ret(Variable),
-    Jmp(Box<BasicBlock>),
-    Void,
 }

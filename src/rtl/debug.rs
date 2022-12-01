@@ -13,7 +13,10 @@ impl Display for Register {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Register::Vir(VirRegister { n, bytes }) => {
-                write!(f, "(reg {} {})", n, bytes)
+                write!(f, "(reg:{bytes} {n})")
+            }
+            Register::Stack(StackRegister { slot, bytes }) => {
+                write!(f, "(stack:{bytes} {slot})")
             }
             Register::Real(reg) => Display::fmt(reg, f),
         }

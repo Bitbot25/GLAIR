@@ -25,7 +25,7 @@ impl Amd64Register {
         }
     }
 
-    pub fn sz(&self) -> usize {
+    pub fn reg_size(&self) -> usize {
         match self {
             Amd64Register::Eax
             | Amd64Register::Ebx

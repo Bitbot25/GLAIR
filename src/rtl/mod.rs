@@ -1,3 +1,5 @@
+use crate::compile::ralloc::AllocationKind;
+
 pub mod amd64;
 pub mod debug;
 
@@ -9,7 +11,7 @@ pub enum RealRegister {
 impl RealRegister {
     pub fn sz(&self) -> usize {
         match self {
-            RealRegister::Amd64(reg) => reg.sz(),
+            RealRegister::Amd64(reg) => reg.reg_size(),
         }
     }
 }
@@ -20,10 +22,17 @@ pub struct VirRegister {
     pub n: usize,
 }
 
+#[derive(PartialEq, Eq, Hash, Debug, Copy, Clone)]
+pub struct StackRegister {
+    pub bytes: usize,
+    pub slot: usize,
+}
+
 #[derive(PartialEq, Eq, Hash, Copy, Clone)]
 pub enum Register {
     Vir(VirRegister),
     Real(RealRegister),
+    Stack(StackRegister),
 }
 
 impl Register {
@@ -32,6 +41,9 @@ impl Register {
         match self {
             Register::Vir(pseudo) => panic!("Pseudo register {} was not resolved.", pseudo.n),
             Register::Real(real) => real,
+            Register::Stack(ss) => {
+                panic!("Cannot unwrap stack slot ({}) to real register.", ss.slot)
+            }
         }
     }
 
@@ -39,6 +51,7 @@ impl Register {
         match self {
             Register::Real(real) => real.sz(),
             Register::Vir(pseudo) => pseudo.bytes,
+            Register::Stack(ss) => ss.bytes,
         }
     }
 }
@@ -112,21 +125,28 @@ pub struct Block {
     pub metadata: (),
 }
 
-fn promote_register(reg: &mut Register, mut promote: impl FnMut(&VirRegister) -> RealRegister) {
+fn promote_register(reg: &mut Register, mut promote: impl FnMut(&VirRegister) -> AllocationKind) {
     match reg {
-        Register::Vir(vir) => *reg = Register::Real(promote(vir)),
+        Register::Vir(vir) => match promote(vir) {
+            AllocationKind::Reg(real) => *reg = Register::Real(real),
+            AllocationKind::Stack(ss) => *reg = Register::Stack(ss),
+        },
+        Register::Stack(..) => (),
         Register::Real(..) => (),
     }
 }
 
-fn promote_rvalue(rvalue: &mut RValue, promote: impl FnMut(&VirRegister) -> RealRegister) {
+fn promote_rvalue(rvalue: &mut RValue, promote: impl FnMut(&VirRegister) -> AllocationKind) {
     match rvalue {
         RValue::Lit(..) => (),
         RValue::Register(reg) => promote_register(reg, promote),
     }
 }
 
-pub fn promote_registers_in_op(op: &mut Op, mut promote: impl FnMut(&VirRegister) -> RealRegister) {
+pub fn promote_registers_in_op(
+    op: &mut Op,
+    mut promote: impl FnMut(&VirRegister) -> AllocationKind,
+) {
     match op {
         Op::Copy(OpCopy { to, from }) => {
             promote_register(to, &mut promote);
@@ -153,7 +173,7 @@ pub fn promote_registers_in_op(op: &mut Op, mut promote: impl FnMut(&VirRegister
 
 pub fn promote_registers_in_ops(
     ops: &mut Ops,
-    mut promote: impl FnMut(&VirRegister) -> RealRegister,
+    mut promote: impl FnMut(&VirRegister) -> AllocationKind,
 ) {
     for op in ops {
         promote_registers_in_op(op, &mut promote);

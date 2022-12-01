@@ -1,4 +1,6 @@
-use crate::rtl::{amd64::Amd64Register, Op, Ops, RValue, RealRegister, Register, VirRegister};
+use crate::rtl::{
+    amd64::Amd64Register, Op, Ops, RValue, RealRegister, Register, StackRegister, VirRegister,
+};
 use std::fmt;
 
 const AMD64_ALLOC_DWORD_REG: [Amd64Register; 4] = [
@@ -62,9 +64,9 @@ impl<T: fmt::Debug> fmt::Debug for VirRegisterMap<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "VirRegisterMap [\n")?;
         // TODO: Indentation (PadAdapter)
-        for val in &self.arr {
-            match val {
-                Some(entry) => {
+        for opt in &self.arr {
+            match opt {
+                Some((entry, _)) => {
                     fmt::Debug::fmt(entry, f)?;
                     write!(f, "\n")?;
                 }
@@ -80,6 +82,7 @@ pub struct Allocator {
     allocations: VirRegisterMap<Allocation>,
     virtuals: Vec<(VirRegister, VirRegisterInfo)>,
     manually_excluded: Vec<RealRegister>,
+    stack_alloc_offset: usize,
 }
 
 impl Allocator {
@@ -91,6 +94,7 @@ impl Allocator {
             virtuals,
             manually_excluded: occupied,
             allocations: VirRegisterMap::new(),
+            stack_alloc_offset: 0,
         }
     }
 
@@ -100,27 +104,58 @@ impl Allocator {
     }
 
     pub fn create_allocations(&mut self) {
+        fn lifetime_a_inside_b(a_info: &VirRegisterInfo, b_info: &VirRegisterInfo) -> bool {
+            (a_info.lifetime_begin >= b_info.lifetime_begin
+                && a_info.lifetime_begin <= b_info.lifetime_end)
+                || (a_info.lifetime_end <= b_info.lifetime_end
+                    && a_info.lifetime_end >= b_info.lifetime_begin)
+        }
+
         for (vir, info) in &self.virtuals {
             assert_eq!(vir.bytes, 4, "only support for 4 bytes");
             // FIXME: Support for other than AMD64
+            // FIXME: Support for other than 4 bytes
+            // FIXME: Make sure size is aligned
             let allocations: Vec<&Allocation> = self.allocations.keys().collect();
             let mut choices: Vec<&Amd64Register> = AMD64_ALLOC_DWORD_REG
                 .iter()
                 .filter(|reg| {
                     !self.manually_excluded.contains(&RealRegister::Amd64(**reg))
-                        && !allocations.iter().any(|alloc| match &alloc.reg {
-                            RealRegister::Amd64(amd) => amd == *reg,
+                        && allocations.iter().all(|alloc| match alloc.kind {
+                            AllocationKind::Reg(register)
+                                if *reg
+                                    == match &register {
+                                        RealRegister::Amd64(amd) => amd,
+                                    }
+                                    && lifetime_a_inside_b(info, &alloc.info) =>
+                            {
+                                false
+                            }
+                            AllocationKind::Reg(_) => true,
+                            AllocationKind::Stack { .. } => true,
                         })
                 })
                 .collect();
-            let reg = choices.drain(..).next().expect("no free registers!");
+
+            let kind = choices
+                .drain(..)
+                .next()
+                .map(|reg| AllocationKind::Reg(RealRegister::Amd64(*reg)))
+                .unwrap_or_else(|| {
+                    // Stack allocation when no registers left
+                    self.stack_alloc_offset += vir.bytes;
+                    AllocationKind::Stack(StackRegister {
+                        slot: self.stack_alloc_offset,
+                        bytes: vir.bytes,
+                    })
+                });
 
             self.allocations.insert(
                 vir,
                 Allocation {
                     info: *info,
                     vir: *vir,
-                    reg: RealRegister::Amd64(*reg),
+                    kind,
                 },
             );
         }
@@ -141,6 +176,9 @@ pub fn analyze_rtl(ops: &Ops) -> (VirRegisterMap<VirRegisterInfo>, Vec<RealRegis
             Register::Real(real) => {
                 already_occupied.push(*real);
                 return;
+            }
+            Register::Stack(_ss) => {
+                todo!("pre-occupied stack slot");
             }
             Register::Vir(vir) => vir,
         };
@@ -212,7 +250,13 @@ impl Allocator {
 pub struct Allocation {
     pub info: VirRegisterInfo,
     pub vir: VirRegister,
-    pub reg: RealRegister,
+    pub kind: AllocationKind,
+}
+
+#[derive(Debug, Copy, Clone)]
+pub enum AllocationKind {
+    Reg(RealRegister),
+    Stack(StackRegister),
 }
 
 type InstrIdx = usize;

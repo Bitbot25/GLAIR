@@ -26,7 +26,7 @@ fn main() {
     // let mut codegen_ctx = codegen::CodegenContext::default();
     rtl::promote_registers_in_ops(&mut compiled_rtl.ops, |vir| {
         map.get(vir)
-            .map(|alloc| alloc.reg)
+            .map(|alloc| alloc.kind)
             .expect("unmapped register")
     });
 
