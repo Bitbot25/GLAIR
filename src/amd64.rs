@@ -14,6 +14,7 @@ impl Reg {
             RAX => false,
             RCX => false,
             EAX => false,
+            ECX => false,
             _ => panic!("Unknown register"),
         }
     }
@@ -23,6 +24,10 @@ impl Reg {
             id: self.id & 0b111,
             mode: self.mode,
         }
+    }
+
+    pub fn ex_bit(&self) -> u8 {
+        self.id & 0b1000
     }
 }
 pub const RAX: Reg = Reg {
@@ -36,6 +41,10 @@ pub const EAX: Reg = Reg {
 pub const RCX: Reg = Reg {
     id: 1,
     mode: OpMode::Bit64,
+};
+pub const ECX: Reg = Reg {
+    id: 1,
+    mode: OpMode::Bit32,
 };
 
 #[derive(Debug, Copy, Clone)]
@@ -104,6 +113,27 @@ mod modrm {
     }
 }
 
+mod rex {
+    pub struct Rex {
+        pub opr_64bit: bool,
+        pub modrm_reg_ext: u8,
+        pub sib_index_ext: u8,
+        pub sib_base_modrm_rm_ext: u8,
+    }
+
+    impl Rex {
+        pub fn amd64_codegen(&self) -> u8 {
+            let mut rex = 0b01000000;
+            rex |= (self.opr_64bit as u8) << 3;
+            rex |= self.modrm_reg_ext << 2;
+            rex |= self.sib_index_ext << 1;
+            rex |= self.sib_base_modrm_rm_ext;
+            eprintln!("REX: {:08b}", rex);
+            rex
+        }
+    }
+}
+
 struct MovGvIv {
     reg: Reg,
     imm: Imm32,
@@ -111,7 +141,6 @@ struct MovGvIv {
 
 impl MovGvIv {
     pub fn amd64_codegen(&self) -> Vec<u8> {
-        assert!(!self.reg.has_ex_bit(), "No support for REX byte");
         let mut base = vec![
             0xC7,
             modrm::ModRM {
@@ -121,8 +150,32 @@ impl MovGvIv {
             }
             .amd64_codegen(),
         ];
+        match self.reg.mode {
+            OpMode::Bit64 => {
+                let rex = rex::Rex {
+                    opr_64bit: true,
+                    modrm_reg_ext: self.reg.ex_bit(),
+                    sib_index_ext: 0,
+                    sib_base_modrm_rm_ext: 0,
+                }
+                .amd64_codegen();
+                base.insert(0, rex);
+            }
+            OpMode::Bit32 => (),
+        }
         base.extend_from_slice(&self.imm.int32.to_le_bytes());
         base
+    }
+}
+
+struct MovGvEv {
+    dest: Reg,
+    value: Reg,
+}
+
+impl MovGvEv {
+    pub fn amd64_codegen(&self) -> Vec<u8> {
+        todo!()
     }
 }
 
@@ -156,7 +209,11 @@ impl OpCode {
                         }
                         .amd64_codegen(),
                     },
-                    RegImm::Reg(..) => todo!(),
+                    RegImm::Reg(val) => MovGvEv {
+                        dest: *reg,
+                        value: *val,
+                    }
+                    .amd64_codegen(),
                 },
             },
             OpCode::RetNear => vec![0xC3],
