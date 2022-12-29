@@ -1,4 +1,17 @@
+use crate::rtl::ContainsDataType;
+use crate::rtl::RegDataType;
 use std::fmt;
+
+impl ContainsDataType for Reg {
+    fn data_ty(&self) -> RegDataType {
+        match self.mode {
+            OpMode::Bit64 => RegDataType::Int64,
+            OpMode::Bit32 => RegDataType::Int32,
+            OpMode::Bit16 => RegDataType::Int16,
+            OpMode::Bit8 => RegDataType::Int8,
+        }
+    }
+}
 
 #[derive(PartialEq, Eq, Copy, Clone, Debug)]
 pub struct Reg {
@@ -34,6 +47,14 @@ pub const EAX: Reg = Reg {
     id: 0,
     mode: OpMode::Bit32,
 };
+pub const AX: Reg = Reg {
+    id: 0,
+    mode: OpMode::Bit16,
+};
+pub const A: Reg = Reg {
+    id: 0,
+    mode: OpMode::Bit8,
+};
 pub const RCX: Reg = Reg {
     id: 1,
     mode: OpMode::Bit64,
@@ -41,6 +62,14 @@ pub const RCX: Reg = Reg {
 pub const ECX: Reg = Reg {
     id: 1,
     mode: OpMode::Bit32,
+};
+pub const CX: Reg = Reg {
+    id: 1,
+    mode: OpMode::Bit16,
+};
+pub const C: Reg = Reg {
+    id: 1,
+    mode: OpMode::Bit8,
 };
 
 #[derive(Copy, Clone)]
@@ -168,7 +197,7 @@ impl MovRegImm32 {
                 .compile_amd64();
                 base.insert(0, rex);
             }
-            OpMode::Bit32 => (),
+            OpMode::Bit32 | OpMode::Bit16 | OpMode::Bit8 => (),
         }
         base.extend_from_slice(unsafe { &self.imm.int32.to_le_bytes() });
         base
@@ -210,16 +239,27 @@ impl MovRegReg {
 }
 
 #[derive(Debug)]
+pub struct RetNear;
+
+impl RetNear {
+    pub fn compile_amd64(&self) -> u8 {
+        0xc3
+    }
+}
+
+#[derive(Debug)]
 pub enum OpCode {
     MovRegImm32(MovRegImm32),
     MovRegReg(MovRegReg),
-    RetNear,
+    RetNear(RetNear),
 }
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 enum OpMode {
     Bit64,
     Bit32,
+    Bit16,
+    Bit8,
 }
 
 impl OpCode {
@@ -227,7 +267,7 @@ impl OpCode {
         match self {
             OpCode::MovRegImm32(mov) => mov.compile_amd64(),
             OpCode::MovRegReg(mov) => mov.compile_amd64(),
-            OpCode::RetNear => vec![0xC3],
+            OpCode::RetNear(r) => vec![r.compile_amd64()],
         }
     }
 }

@@ -1,30 +1,24 @@
 use glair::amd64;
 use glair::linux64;
+use glair::rtl;
 use std::mem;
 
 fn main() {
     let instructions = vec![
-        amd64::OpCode::MovRegImm32(amd64::MovRegImm32 {
-            reg: amd64::RCX,
-            imm: amd64::Imm32 { int32: 10 },
+        rtl::RtlOp::Move(rtl::Move {
+            dest: rtl::Register::Phys(rtl::PhysicalReg::Amd64(amd64::RCX)),
+            value: rtl::RValue::Immediate(rtl::Immediate::I32(69)),
         }),
-        amd64::OpCode::MovRegReg(amd64::MovRegReg {
-            dest: amd64::RAX,
-            value: amd64::RCX,
+        rtl::RtlOp::Return(rtl::Return {
+            value: Some(rtl::Register::Phys(rtl::PhysicalReg::Amd64(amd64::RCX))),
+            cc: rtl::CallingConvention::C,
         }),
-        /*amd64::OpCode::Mov(amd64::MovGeneric {
-            destination: amd64::RegMem::Reg(amd64::ECX),
-            value: amd64::RegImm::Imm(amd64::Immediate::Imm32(amd64::Imm32 { int32: 10 })),
-        }),
-        amd64::OpCode::Mov(amd64::MovGeneric {
-            destination: amd64::RegMem::Reg(amd64::EAX),
-            value: amd64::RegImm::Reg(amd64::ECX),
-        }),*/
-        amd64::OpCode::RetNear,
     ];
+
     let code: Vec<u8> = instructions
         .iter()
-        .flat_map(|op| op.compile_amd64())
+        .filter_map(|op| op.compile_amd64().ok())
+        .flat_map(|instr| instr)
         .collect();
 
     for b in &code {
