@@ -1,3 +1,5 @@
+use std::fmt;
+
 #[derive(PartialEq, Eq, Copy, Clone, Debug)]
 pub struct Reg {
     id: u8,
@@ -5,18 +7,12 @@ pub struct Reg {
 }
 
 impl Reg {
-    pub fn amd64_codegen(&self) -> u8 {
+    pub fn compile_amd64(&self) -> u8 {
         self.id
     }
 
     pub fn has_ex_bit(&self) -> bool {
-        match *self {
-            RAX => false,
-            RCX => false,
-            EAX => false,
-            ECX => false,
-            _ => panic!("Unknown register"),
-        }
+        self.ex_bit() == 1
     }
 
     pub fn without_ex_bit(&self) -> Reg {
@@ -47,9 +43,19 @@ pub const ECX: Reg = Reg {
     mode: OpMode::Bit32,
 };
 
-#[derive(Debug, Copy, Clone)]
-pub struct Imm32 {
+#[derive(Copy, Clone)]
+pub union Imm32 {
     pub int32: i32,
+    pub uint32: u32,
+}
+
+impl fmt::Debug for Imm32 {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Imm32")
+            .field("int32", unsafe { &self.int32 })
+            .field("uint32", unsafe { &self.uint32 })
+            .finish()
+    }
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -79,9 +85,9 @@ mod modrm {
     }
 
     impl FieldReg {
-        pub fn amd64_codegen(&self) -> u8 {
+        pub fn compile_amd64(&self) -> u8 {
             match self {
-                FieldReg::Reg(reg) => reg.amd64_codegen(),
+                FieldReg::Reg(reg) => reg.compile_amd64(),
                 FieldReg::OpCodeExt(v) => *v,
             }
         }
@@ -96,18 +102,18 @@ mod modrm {
     }
 
     impl ModRM {
-        pub fn amd64_codegen(&self) -> u8 {
+        pub fn compile_amd64(&self) -> u8 {
             assert!(!self.rm.has_ex_bit());
             match self.reg {
                 FieldReg::OpCodeExt(..) => (),
-                FieldReg::Reg(reg) => assert!(reg.has_ex_bit()),
+                FieldReg::Reg(reg) => assert!(!reg.has_ex_bit()),
             };
 
             let mut modrm = match self.mode {
                 FieldMod::Direct => 0b11000000,
             };
-            modrm |= self.reg.amd64_codegen() << 3;
-            modrm |= self.rm.amd64_codegen() << 0;
+            modrm |= self.reg.compile_amd64() << 3;
+            modrm |= self.rm.compile_amd64() << 0;
             modrm
         }
     }
@@ -122,7 +128,7 @@ mod rex {
     }
 
     impl Rex {
-        pub fn amd64_codegen(&self) -> u8 {
+        pub fn compile_amd64(&self) -> u8 {
             let mut rex = 0b01000000;
             rex |= (self.opr_64bit as u8) << 3;
             rex |= self.modrm_reg_ext << 2;
@@ -134,13 +140,14 @@ mod rex {
     }
 }
 
-struct MovGvIv {
-    reg: Reg,
-    imm: Imm32,
+#[derive(Debug)]
+pub struct MovRegImm32 {
+    pub reg: Reg,
+    pub imm: Imm32,
 }
 
-impl MovGvIv {
-    pub fn amd64_codegen(&self) -> Vec<u8> {
+impl MovRegImm32 {
+    pub fn compile_amd64(&self) -> Vec<u8> {
         let mut base = vec![
             0xC7,
             modrm::ModRM {
@@ -148,7 +155,7 @@ impl MovGvIv {
                 reg: modrm::FieldReg::OpCodeExt(0),
                 rm: self.reg.without_ex_bit(),
             }
-            .amd64_codegen(),
+            .compile_amd64(),
         ];
         match self.reg.mode {
             OpMode::Bit64 => {
@@ -158,36 +165,54 @@ impl MovGvIv {
                     sib_index_ext: 0,
                     sib_base_modrm_rm_ext: 0,
                 }
-                .amd64_codegen();
+                .compile_amd64();
                 base.insert(0, rex);
             }
             OpMode::Bit32 => (),
         }
-        base.extend_from_slice(&self.imm.int32.to_le_bytes());
+        base.extend_from_slice(unsafe { &self.imm.int32.to_le_bytes() });
         base
     }
 }
 
-struct MovGvEv {
-    dest: Reg,
-    value: Reg,
+#[derive(Debug)]
+pub struct MovRegReg {
+    pub dest: Reg,
+    pub value: Reg,
 }
 
-impl MovGvEv {
-    pub fn amd64_codegen(&self) -> Vec<u8> {
-        todo!()
+impl MovRegReg {
+    pub fn compile_amd64(&self) -> Vec<u8> {
+        let dest_64bit = self.dest.mode == OpMode::Bit64;
+        let value_64bit = self.value.mode == OpMode::Bit64;
+        let mut buf = if dest_64bit || value_64bit {
+            let rex = rex::Rex {
+                opr_64bit: true,
+                modrm_reg_ext: self.value.ex_bit(),
+                sib_index_ext: 0,
+                sib_base_modrm_rm_ext: self.dest.ex_bit(),
+            }
+            .compile_amd64();
+            vec![rex]
+        } else {
+            Vec::new()
+        };
+        buf.push(0x89);
+        let modrm = modrm::ModRM {
+            mode: modrm::FieldMod::Direct,
+            reg: modrm::FieldReg::Reg(self.value.without_ex_bit()),
+            rm: self.dest.without_ex_bit(),
+        }
+        .compile_amd64();
+        buf.push(modrm);
+        buf
     }
 }
 
 #[derive(Debug)]
-pub struct MovGeneric {
-    pub destination: RegMem,
-    pub value: RegImm,
-}
-
-#[derive(Debug)]
 pub enum OpCode {
-    Mov(MovGeneric),
+    MovRegImm32(MovRegImm32),
+    MovRegReg(MovRegReg),
     RetNear,
 }
 
@@ -198,24 +223,10 @@ enum OpMode {
 }
 
 impl OpCode {
-    pub fn amd64_codegen(&self) -> Vec<u8> {
+    pub fn compile_amd64(&self) -> Vec<u8> {
         match self {
-            OpCode::Mov(mov) => match &mov.destination {
-                RegMem::Reg(reg) => match &mov.value {
-                    RegImm::Imm(imm) => match imm {
-                        Immediate::Imm32(imm32) => MovGvIv {
-                            reg: *reg,
-                            imm: *imm32,
-                        }
-                        .amd64_codegen(),
-                    },
-                    RegImm::Reg(val) => MovGvEv {
-                        dest: *reg,
-                        value: *val,
-                    }
-                    .amd64_codegen(),
-                },
-            },
+            OpCode::MovRegImm32(mov) => mov.compile_amd64(),
+            OpCode::MovRegReg(mov) => mov.compile_amd64(),
             OpCode::RetNear => vec![0xC3],
         }
     }

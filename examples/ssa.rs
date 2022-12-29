@@ -4,9 +4,13 @@ use std::mem;
 
 fn main() {
     let instructions = vec![
-        amd64::OpCode::Mov(amd64::MovGeneric {
-            destination: amd64::RegMem::Reg(amd64::RAX),
-            value: amd64::RegImm::Imm(amd64::Immediate::Imm32(amd64::Imm32 { int32: 10 })),
+        amd64::OpCode::MovRegImm32(amd64::MovRegImm32 {
+            reg: amd64::RCX,
+            imm: amd64::Imm32 { int32: 10 },
+        }),
+        amd64::OpCode::MovRegReg(amd64::MovRegReg {
+            dest: amd64::RAX,
+            value: amd64::RCX,
         }),
         /*amd64::OpCode::Mov(amd64::MovGeneric {
             destination: amd64::RegMem::Reg(amd64::ECX),
@@ -20,7 +24,7 @@ fn main() {
     ];
     let code: Vec<u8> = instructions
         .iter()
-        .flat_map(|op| op.amd64_codegen())
+        .flat_map(|op| op.compile_amd64())
         .collect();
 
     for b in &code {
