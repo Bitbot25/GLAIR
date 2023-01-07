@@ -13,7 +13,7 @@ impl ContainsDataType for Reg {
     }
 }
 
-#[derive(PartialEq, Eq, Copy, Clone, Debug)]
+#[derive(PartialEq, Eq, Hash, Copy, Clone, Debug)]
 pub struct Reg {
     id: u8,
     mode: OpMode,
@@ -38,7 +38,19 @@ impl Reg {
     pub fn ex_bit(&self) -> u8 {
         self.id & 0b1000
     }
+
+    pub fn relatives(&self) -> Vec<&'static Reg> {
+        let all = registers();
+        let mut relatives = Vec::new();
+        for reg in all {
+            if reg.id == self.id {
+                relatives.push(reg);
+            }
+        }
+        relatives
+    }
 }
+
 pub const RAX: Reg = Reg {
     id: 0,
     mode: OpMode::Bit64,
@@ -71,6 +83,10 @@ pub const C: Reg = Reg {
     id: 1,
     mode: OpMode::Bit8,
 };
+
+pub fn registers() -> [&'static Reg; 8] {
+    [&RAX, &EAX, &AX, &A, &RCX, &ECX, &CX, &C]
+}
 
 #[derive(Copy, Clone)]
 pub union Imm32 {
@@ -254,7 +270,7 @@ pub enum OpCode {
     RetNear(RetNear),
 }
 
-#[derive(Debug, PartialEq, Eq, Copy, Clone)]
+#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
 enum OpMode {
     Bit64,
     Bit32,

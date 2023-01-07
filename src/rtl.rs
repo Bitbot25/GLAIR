@@ -1,7 +1,135 @@
+use std::cmp::Ordering;
+use std::collections::HashMap;
+use std::collections::HashSet;
+
 use crate::amd64;
 use crate::cfg;
 
-#[derive(Clone, Copy)]
+#[derive(Debug)]
+pub struct RegisterStatistics<'a> {
+    points: Vec<&'a mut Register>,
+}
+
+pub fn analyze<'a>(code: &'a mut Vec<RtlOp>) -> Vec<(VirtualReg, RegisterStatistics<'a>)> {
+    fn do_insert<'a>(
+        map: &mut HashMap<VirtualReg, RegisterStatistics<'a>>,
+        point_wrap: &'a mut Register,
+    ) {
+        let point_unwrap = match point_wrap {
+            Register::Virtual(vir) => vir,
+            Register::Phys(_) => unreachable!(),
+        };
+        let exist = map.get_mut(point_unwrap);
+        match exist {
+            Some(stats) => stats.points.push(point_wrap),
+            None => {
+                map.insert(
+                    *point_unwrap,
+                    RegisterStatistics {
+                        points: vec![point_wrap],
+                    },
+                );
+            }
+        };
+    }
+
+    let mut map: HashMap<VirtualReg, RegisterStatistics<'a>> = HashMap::new();
+    for op in code {
+        match op {
+            RtlOp::Move(Move { dest, value }) => {
+                match dest {
+                    Register::Virtual(vir) => do_insert(&mut map, dest),
+                    Register::Phys(_) => (),
+                };
+                match value {
+                    RValue::Register(reg @ Register::Virtual(_)) => do_insert(&mut map, reg),
+                    RValue::Register(Register::Phys(_)) => (),
+                    RValue::Immediate(_) => (),
+                };
+            }
+            RtlOp::Return(Return { value, .. }) => match value {
+                Some(vir @ Register::Virtual(_)) => do_insert(&mut map, vir),
+                Some(Register::Phys(_)) => (),
+                None => (),
+            },
+            RtlOp::Call(Call { callee }) => todo!(),
+        }
+    }
+    map.into_iter().collect()
+}
+
+#[derive(Debug)]
+pub struct RegisterAllocator {
+    mappings: HashMap<VirtualReg, PhysicalReg>,
+}
+
+impl RegisterAllocator {
+    pub fn perform_allocations_and_modify(code: &mut Vec<RtlOp>) -> Self {
+        let analyzed = analyze(code);
+
+        let mut priority = Vec::new();
+        for (reg, stats) in &analyzed {
+            let RegisterStatistics { points } = stats;
+            let count = points.len();
+            priority.push((count, reg));
+        }
+        priority.sort_unstable_by(|(a_count, _), (b_count, _)| b_count.cmp(a_count));
+        // More used regisers will come first.
+        let priority: Vec<&VirtualReg> = priority.into_iter().map(|(_, reg)| reg).collect();
+        dbg!(&priority);
+        fn registers(filter_out: &Vec<PhysicalReg>) -> impl Iterator<Item = PhysicalReg> + '_ {
+            amd64::registers()
+                .into_iter()
+                .map(|x| *x)
+                .map(PhysicalReg::Amd64)
+                .filter(|reg| !filter_out.contains(reg))
+        }
+        let mut unavailable_phys_reg: Vec<PhysicalReg> = Vec::new();
+
+        fn find_phys_reg(
+            data_ty: RegDataType,
+            regs: impl Iterator<Item = PhysicalReg>,
+        ) -> Option<PhysicalReg> {
+            for reg in regs {
+                if reg.data_ty() == data_ty {
+                    return Some(reg);
+                }
+            }
+            return None;
+        }
+
+        let mut map = HashMap::new();
+        for reg in priority {
+            let phys_reg = match find_phys_reg(reg.data_ty, registers(&unavailable_phys_reg)) {
+                Some(x) => x,
+                None => panic!("not enough registers, and no support for stack"),
+            };
+            match phys_reg {
+                PhysicalReg::Amd64(amd_reg) => {
+                    // Remove sub- and parent regisers aswell.
+                    for reg in amd_reg.relatives() {
+                        unavailable_phys_reg.push(PhysicalReg::Amd64(*reg));
+                    }
+                }
+                _ => {
+                    unavailable_phys_reg.push(phys_reg);
+                }
+            }
+            map.insert(*reg, phys_reg);
+        }
+
+        // Replace virtual registers
+        for (reg, stats) in analyzed {
+            for point in stats.points {
+                *point = Register::Phys(map[&reg]);
+            }
+        }
+
+        RegisterAllocator { mappings: map }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 pub enum RegDataType {
     Int8,
     Int16,
@@ -10,23 +138,23 @@ pub enum RegDataType {
     Custom(usize),
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 pub struct VirtualReg {
-    id: u32,
-    data_ty: RegDataType,
+    pub id: u32,
+    pub data_ty: RegDataType,
 }
 
 pub trait ContainsDataType {
     fn data_ty(&self) -> RegDataType;
 }
 
-#[derive(Clone, Copy)]
+#[derive(Eq, PartialEq, Hash, Debug, Clone, Copy)]
 pub struct StackRegister {
     scope_slot: usize,
     data_ty: RegDataType,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Eq, PartialEq, Hash, Debug, Clone, Copy)]
 pub enum PhysicalReg {
     Amd64(amd64::Reg),
     Stack(StackRegister),
@@ -41,7 +169,7 @@ impl ContainsDataType for PhysicalReg {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub enum Register {
     Virtual(VirtualReg),
     Phys(PhysicalReg),
@@ -56,15 +184,18 @@ impl ContainsDataType for Register {
     }
 }
 
+#[derive(Debug)]
 pub enum Immediate {
     I32(i32),
 }
 
+#[derive(Debug)]
 pub enum RValue {
     Immediate(Immediate),
     Register(Register),
 }
 
+#[derive(Debug)]
 pub struct Move {
     pub dest: Register,
     pub value: RValue,
@@ -112,6 +243,7 @@ pub enum CallingConvention {
     C,
 }
 
+#[derive(Debug)]
 pub struct Return {
     pub value: Option<Register>,
     pub cc: CallingConvention,
@@ -197,6 +329,7 @@ impl Return {
     }
 }
 
+#[derive(Debug)]
 pub struct Call<'cfg> {
     callee: Function<'cfg>,
 }
@@ -207,10 +340,12 @@ impl<'cfg> Call<'cfg> {
     }
 }
 
+#[derive(Debug)]
 pub struct Function<'cfg> {
     block: cfg::Block<'cfg, RtlOp<'cfg>>,
 }
 
+#[derive(Debug)]
 pub enum RtlOp<'cfg> {
     Move(Move),
     Return(Return),
