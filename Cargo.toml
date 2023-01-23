@@ -7,3 +7,4 @@ edition = "2021"
 
 [dependencies]
 casey = "0.3.3"
+burnerflame = { git = "https://github.com/Bitbot25/burnerflame" }

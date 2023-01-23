@@ -1,17 +1,4 @@
-use crate::rtl::ContainsDataType;
-use crate::rtl::RegDataType;
 use std::fmt;
-
-impl ContainsDataType for Reg {
-    fn data_ty(&self) -> RegDataType {
-        match self.mode {
-            OpMode::Bit64 => RegDataType::Int64,
-            OpMode::Bit32 => RegDataType::Int32,
-            OpMode::Bit16 => RegDataType::Int16,
-            OpMode::Bit8 => RegDataType::Int8,
-        }
-    }
-}
 
 #[derive(PartialEq, Eq, Hash, Copy, Clone, Debug)]
 pub struct Reg {
@@ -40,7 +27,7 @@ impl Reg {
     }
 
     pub fn relatives(&self) -> Vec<&'static Reg> {
-        let all = registers();
+        let all = generic_registers();
         let mut relatives = Vec::new();
         for reg in all {
             if reg.id == self.id {
@@ -50,6 +37,23 @@ impl Reg {
         relatives
     }
 }
+
+pub const RSP: Reg = Reg {
+    id: 4,
+    mode: OpMode::Bit64,
+};
+pub const ESP: Reg = Reg {
+    id: 4,
+    mode: OpMode::Bit32,
+};
+pub const SP: Reg = Reg {
+    id: 4,
+    mode: OpMode::Bit16,
+};
+pub const SPL: Reg = Reg {
+    id: 4,
+    mode: OpMode::Bit8,
+};
 
 pub const RAX: Reg = Reg {
     id: 0,
@@ -84,7 +88,7 @@ pub const C: Reg = Reg {
     mode: OpMode::Bit8,
 };
 
-pub fn registers() -> [&'static Reg; 8] {
+pub fn generic_registers() -> [&'static Reg; 8] {
     [&RAX, &EAX, &AX, &A, &RCX, &ECX, &CX, &C]
 }
 
@@ -122,6 +126,7 @@ pub enum RegMem {
 mod modrm {
     pub enum FieldMod {
         Direct,
+        XDisp8,
     }
 
     pub enum FieldReg {
@@ -156,6 +161,7 @@ mod modrm {
 
             let mut modrm = match self.mode {
                 FieldMod::Direct => 0b11000000,
+                FieldMod::XDisp8 => 0b01000000,
             };
             modrm |= self.reg.compile_amd64() << 3;
             modrm |= self.rm.compile_amd64() << 0;
@@ -228,6 +234,7 @@ pub struct MovRegReg {
 
 impl MovRegReg {
     pub fn compile_amd64(&self) -> Vec<u8> {
+        // TODO: Check for SPL and such
         let dest_64bit = self.dest.mode == OpMode::Bit64;
         let value_64bit = self.value.mode == OpMode::Bit64;
         let mut buf = if dest_64bit || value_64bit {
@@ -250,6 +257,62 @@ impl MovRegReg {
         }
         .compile_amd64();
         buf.push(modrm);
+        buf
+    }
+}
+
+pub enum Memory {
+    Disp8(Reg, u8),
+    Disp16(Reg, u16),
+    Disp32(Reg, u32),
+    // SIB(SIB),
+    // TODO: Add SIB + displacement
+}
+
+pub struct MovMemReg {
+    pub dest: Memory,
+    pub value: Reg,
+}
+
+impl MovMemReg {
+    pub fn compile_amd64(&self) -> Vec<u8> {
+        let (mode, rm) = match self.dest {
+            Memory::Disp8(rm, _disp) => (modrm::FieldMod::XDisp8, rm),
+            _ => todo!(),
+        };
+        let opr_64bit = self.value.mode == OpMode::Bit64 || rm.mode == OpMode::Bit64;
+        let mut buf = if opr_64bit || self.value == SPL || rm == SPL {
+            let rex = rex::Rex {
+                opr_64bit,
+                modrm_reg_ext: self.value.ex_bit(),
+                sib_index_ext: 0,
+                sib_base_modrm_rm_ext: rm.ex_bit(),
+            }
+            .compile_amd64();
+            vec![rex]
+        } else {
+            Vec::new()
+        };
+        let opcode = if self.value.mode == OpMode::Bit8 {
+            0x88
+        } else {
+            0x89
+        };
+        buf.push(opcode);
+
+        let modrm = modrm::ModRM {
+            mode,
+            reg: modrm::FieldReg::Reg(self.value.without_ex_bit()),
+            rm: rm.without_ex_bit(),
+        }
+        .compile_amd64();
+        buf.push(modrm);
+        buf.push(0x24);
+
+        match self.dest {
+            Memory::Disp8(_rm, disp8) => buf.push(disp8),
+            _ => todo!(),
+        };
         buf
     }
 }

@@ -1,6 +1,4 @@
-use std::cmp::Ordering;
 use std::collections::HashMap;
-use std::collections::HashSet;
 
 use crate::amd64;
 use crate::cfg;
@@ -10,7 +8,12 @@ pub struct RegisterStatistics<'a> {
     points: Vec<&'a mut Register>,
 }
 
-pub fn analyze<'a>(code: &'a mut Vec<RtlOp>) -> Vec<(VirtualReg, RegisterStatistics<'a>)> {
+struct Analysis<'a> {
+    register_stats: Vec<(VirtualReg, RegisterStatistics<'a>)>,
+    preoccupied_regs: Vec<&'a PhysicalReg>,
+}
+
+fn analyze<'a>(code: &'a mut Vec<RtlOp>) -> Analysis<'a> {
     fn do_insert<'a>(
         map: &mut HashMap<VirtualReg, RegisterStatistics<'a>>,
         point_wrap: &'a mut Register,
@@ -34,28 +37,33 @@ pub fn analyze<'a>(code: &'a mut Vec<RtlOp>) -> Vec<(VirtualReg, RegisterStatist
     }
 
     let mut map: HashMap<VirtualReg, RegisterStatistics<'a>> = HashMap::new();
+    let mut preoccupied_regs: Vec<&PhysicalReg> = Vec::new();
     for op in code {
         match op {
             RtlOp::Move(Move { dest, value }) => {
                 match dest {
-                    Register::Virtual(vir) => do_insert(&mut map, dest),
-                    Register::Phys(_) => (),
+                    Register::Virtual(_vir) => do_insert(&mut map, dest),
+                    Register::Phys(phys) => preoccupied_regs.push(phys),
                 };
                 match value {
                     RValue::Register(reg @ Register::Virtual(_)) => do_insert(&mut map, reg),
-                    RValue::Register(Register::Phys(_)) => (),
+                    RValue::Register(Register::Phys(phys)) => preoccupied_regs.push(phys),
                     RValue::Immediate(_) => (),
                 };
             }
             RtlOp::Return(Return { value, .. }) => match value {
                 Some(vir @ Register::Virtual(_)) => do_insert(&mut map, vir),
-                Some(Register::Phys(_)) => (),
+                Some(Register::Phys(phys)) => preoccupied_regs.push(phys),
                 None => (),
             },
-            RtlOp::Call(Call { callee }) => todo!(),
+            RtlOp::FixAlignment(_) => (),
+            RtlOp::Call(Call { callee: _ }) => todo!(),
         }
     }
-    map.into_iter().collect()
+    Analysis {
+        register_stats: map.into_iter().collect(),
+        preoccupied_regs,
+    }
 }
 
 #[derive(Debug)]
@@ -63,12 +71,48 @@ pub struct RegisterAllocator {
     mappings: HashMap<VirtualReg, PhysicalReg>,
 }
 
+#[derive(Default)]
+pub struct StackAllocator {
+    offset: usize,
+}
+
+impl StackAllocator {
+    pub fn allocate(&mut self, data_ty: RegDataType) -> PhysicalReg {
+        let size_in_bytes = match data_ty {
+            RegDataType::Custom(sz) => {
+                validate_alignment_amd64(sz); // FIXME: Validate alignment for other IAs
+                sz
+            }
+            RegDataType::Int8 => 8, // All the sizes are 8 because of the stack alignment (FIXME: This may be different for other IAs)
+            RegDataType::Int16 => 8,
+            RegDataType::Int32 => 8,
+            RegDataType::Int64 => 8,
+        };
+        self.offset += size_in_bytes;
+        let v = PhysicalReg::Stack(StackRegister {
+            scope_slot: self.offset,
+            data_ty,
+        });
+        v
+    }
+
+    pub fn top(&self) -> usize {
+        self.offset
+    }
+}
+
 impl RegisterAllocator {
-    pub fn perform_allocations_and_modify(code: &mut Vec<RtlOp>) -> Self {
-        let analyzed = analyze(code);
+    pub fn perform_allocations_and_modify(
+        code_block: &mut Vec<RtlOp>,
+        stack: &mut StackAllocator,
+    ) -> Self {
+        let Analysis {
+            register_stats,
+            preoccupied_regs,
+        } = analyze(code_block);
 
         let mut priority = Vec::new();
-        for (reg, stats) in &analyzed {
+        for (reg, stats) in &register_stats {
             let RegisterStatistics { points } = stats;
             let count = points.len();
             priority.push((count, reg));
@@ -78,13 +122,14 @@ impl RegisterAllocator {
         let priority: Vec<&VirtualReg> = priority.into_iter().map(|(_, reg)| reg).collect();
         dbg!(&priority);
         fn registers(filter_out: &Vec<PhysicalReg>) -> impl Iterator<Item = PhysicalReg> + '_ {
-            amd64::registers()
+            amd64::generic_registers()
                 .into_iter()
                 .map(|x| *x)
                 .map(PhysicalReg::Amd64)
                 .filter(|reg| !filter_out.contains(reg))
         }
-        let mut unavailable_phys_reg: Vec<PhysicalReg> = Vec::new();
+        let mut unavailable_phys_reg: Vec<PhysicalReg> =
+            preoccupied_regs.into_iter().map(|r| *r).collect();
 
         fn find_phys_reg(
             data_ty: RegDataType,
@@ -102,11 +147,11 @@ impl RegisterAllocator {
         for reg in priority {
             let phys_reg = match find_phys_reg(reg.data_ty, registers(&unavailable_phys_reg)) {
                 Some(x) => x,
-                None => panic!("not enough registers, and no support for stack"),
+                None => stack.allocate(reg.data_ty),
             };
             match phys_reg {
                 PhysicalReg::Amd64(amd_reg) => {
-                    // Remove sub- and parent regisers aswell.
+                    // Remove sub- and parent registers aswell.
                     for reg in amd_reg.relatives() {
                         unavailable_phys_reg.push(PhysicalReg::Amd64(*reg));
                     }
@@ -119,7 +164,7 @@ impl RegisterAllocator {
         }
 
         // Replace virtual registers
-        for (reg, stats) in analyzed {
+        for (reg, stats) in register_stats {
             for point in stats.points {
                 *point = Register::Phys(map[&reg]);
             }
@@ -209,18 +254,33 @@ pub enum CompileRtlError {
     },
 }
 
+pub struct FunctionFootprint {
+    pub stack_size: usize,
+}
+
+#[derive(Default)]
+pub struct Context {
+    current_function: Option<FunctionFootprint>,
+}
+
+impl Context {
+    pub fn new(current_function: Option<FunctionFootprint>) -> Self {
+        Context { current_function }
+    }
+}
+
 impl Move {
     fn register_to_amd64_native(reg: Register) -> Result<amd64::Reg, CompileRtlError> {
         let Register::Phys(dest) = reg else {
             return Err(CompileRtlError::VirtualRegister);
         };
         match dest {
-            PhysicalReg::Stack(_stack_reg) => todo!(),
+            PhysicalReg::Stack(_stack_reg) => panic!("stack registers are not applicable"),
             PhysicalReg::Amd64(dest) => Ok(dest),
         }
     }
 
-    pub fn compile_amd64(&self) -> Result<Vec<u8>, CompileRtlError> {
+    pub fn compile_amd64(&self, ctx: &Context) -> Result<Vec<u8>, CompileRtlError> {
         Ok(match &self.value {
             RValue::Immediate(imm) => match imm {
                 Immediate::I32(i32) => amd64::MovRegImm32 {
@@ -229,6 +289,28 @@ impl Move {
                 }
                 .compile_amd64(),
             },
+            RValue::Register(Register::Phys(PhysicalReg::Amd64(amd_reg_value))) => {
+                match self.dest {
+                    Register::Virtual(_) => return Err(CompileRtlError::VirtualRegister),
+                    Register::Phys(PhysicalReg::Amd64(amd_reg_dest)) => amd64::MovRegReg {
+                        dest: amd_reg_dest,
+                        value: *amd_reg_value,
+                    }
+                    .compile_amd64(),
+                    Register::Phys(PhysicalReg::Stack(stack_dest)) => amd64::MovMemReg {
+                        dest: amd64::Memory::Disp8(
+                            amd64::SP,
+                            ctx.current_function
+                                .as_ref()
+                                .expect("no access to stack data")
+                                .stack_size as u8
+                                - stack_dest.scope_slot as u8,
+                        ),
+                        value: *amd_reg_value,
+                    }
+                    .compile_amd64(),
+                }
+            }
             RValue::Register(reg) => amd64::MovRegReg {
                 dest: Self::register_to_amd64_native(self.dest)?,
                 value: Self::register_to_amd64_native(*reg)?,
@@ -250,7 +332,8 @@ pub struct Return {
 }
 
 fn validate_alignment_amd64(size: usize) {
-    if size % 16 != 0 || size == 0 {
+    // FIXME: SIMD instructions require 16-byte alignment
+    if size % 8 != 0 || size == 0 {
         panic!("Invalid stack alignment");
     }
 }
@@ -346,16 +429,27 @@ pub struct Function<'cfg> {
 }
 
 #[derive(Debug)]
+pub struct FixAlignment;
+
+impl FixAlignment {
+    pub fn compile_amd64(&self) -> Vec<u8> {
+        todo!()
+    }
+}
+
+#[derive(Debug)]
 pub enum RtlOp<'cfg> {
+    FixAlignment(FixAlignment),
     Move(Move),
     Return(Return),
     Call(Call<'cfg>),
 }
 
 impl<'cfg> RtlOp<'cfg> {
-    pub fn compile_amd64(&self) -> Result<Vec<u8>, CompileRtlError> {
+    pub fn compile_amd64(&self, ctx: &Context) -> Result<Vec<u8>, CompileRtlError> {
         match self {
-            RtlOp::Move(mov) => mov.compile_amd64(),
+            RtlOp::Move(mov) => mov.compile_amd64(ctx),
+            RtlOp::FixAlignment(align) => Ok(align.compile_amd64()),
             RtlOp::Return(ret) => Ok(ret.compile_amd64()),
             RtlOp::Call(call) => Ok(call.compile_amd64()),
         }
