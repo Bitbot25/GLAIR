@@ -76,6 +76,7 @@ impl MMapHandle {
         let page_sz = 4096;
         let segments = round_to_pow2((slice.len() + page_sz - 1) / page_sz);
         let length = segments * page_sz;
+        // TODO: Somehow remove PROT_WRITE
         let addr = unsafe {
             mmap_raw(
                 std::ptr::null_mut(),

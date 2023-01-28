@@ -5,7 +5,7 @@ impl PlaceholderReg {
         self.identifier
     }
 
-    pub fn size(&self) -> &SizeSpecification {
+    pub fn size(&self) -> &ILSize {
         &self.size
     }
 }
@@ -36,6 +36,24 @@ impl SSARegister {
         match self {
             Self::Placeholder(_) => panic!("cannot unwrap PlaceholderReg to MachineReg"),
             Self::MachineRegister(x) => x,
+        }
+    }
+
+    pub fn unwrap_into_machine_register(self) -> MachineReg {
+        match self {
+            Self::Placeholder(_) => panic!("cannot unwrap PlaceholderReg to MachineReg"),
+            Self::MachineRegister(x) => x,
+        }
+    }
+}
+
+impl Instruction {
+    pub fn generate_amd64(&self, assembler: &mut burnerflame::Assembler) {
+        match self {
+            Instruction::Write(write) => write.generate_amd64(assembler),
+            Instruction::Read(read) => todo!(),
+            Instruction::Reserve(reserve) => reserve.generate_amd64(assembler),
+            Instruction::Return(ret) => ret.generate_amd64(assembler),
         }
     }
 }
