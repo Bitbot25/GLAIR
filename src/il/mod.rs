@@ -1,3 +1,5 @@
+pub mod cfg;
+mod galloc_impl;
 mod impl_amd;
 mod impl_misc;
 
@@ -77,10 +79,20 @@ pub struct PlaceholderReg {
     pub size: ILSize,
 }
 
+impl Eq for PlaceholderReg {}
+
+impl PartialEq for PlaceholderReg {
+    fn eq(&self, other: &Self) -> bool {
+        self.identifier == other.identifier
+    }
+}
+
+#[derive(PartialEq, Eq)]
 pub enum MachineReg {
     AMD64(burnerflame::Register),
 }
 
+#[derive(PartialEq, Eq)]
 pub enum SSARegister {
     Placeholder(PlaceholderReg),
     MachineRegister(MachineReg),

@@ -1,5 +1,6 @@
 use burnerflame::{AssmMov, AssmRet};
 use glair::il;
+use glair::il::cfg;
 use glair::linux64;
 use std::mem;
 
@@ -13,6 +14,8 @@ fn main() {
         }),
         il::Instruction::Return(il::Return { register: None }),
     ];
+    let mut cfg = cfg::CtrlFlow::new();
+    cfg.insert_block(cfg::Block::new(instructions));
 
     let mut assembler = burnerflame::Assembler::new();
     //for instruction in instructions {
