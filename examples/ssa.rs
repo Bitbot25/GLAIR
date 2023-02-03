@@ -1,4 +1,6 @@
 use burnerflame::{AssmMov, AssmRet};
+use glair::galloc::ifr;
+use glair::galloc::ifr::InterferenceData;
 use glair::galloc::liveness;
 use glair::il;
 use glair::il::cfg;
@@ -24,18 +26,28 @@ fn main() {
     )]));
     cfg.add_directed_edge(entry_block, other_block);
 
-    let deaths = liveness::find_deaths(&eax, entry_block, &cfg);
-    dbg!(&deaths);
-    for death in deaths {
-        liveness::mark_live_in_range(
-            &eax,
-            cfg::Location::new(entry_block, 0),
-            death,
-            |_var, _ins, _loc| false,
-            |var, ins, loc| eprintln!("live mark {var:?} at {loc:?}"),
-            &cfg,
-        );
+    let mut ifr_accum = ifr::InterferenceAccum::new();
+    let vars = &[eax, ecx];
+
+    for var in vars {
+        let deaths = liveness::find_deaths(var, entry_block, &cfg);
+        dbg!(&deaths);
+        for death in deaths {
+            liveness::mark_live_in_range(
+                var,
+                cfg::Location::new(entry_block, 0),
+                death,
+                &mut ifr_accum,
+                &cfg,
+            );
+        }
     }
+    let ifr_graph = ifr::construct_ssa(
+        ifr_accum
+            .into_iter()
+            .map(|(reg, live_locs)| (reg, InterferenceData::new(live_locs))),
+    );
+    dbg!(ifr_graph);
 
     /*let mut assembler = burnerflame::Assembler::new();
     for instruction in block.realise(&cfg).instructions() {

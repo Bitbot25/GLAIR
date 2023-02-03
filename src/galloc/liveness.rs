@@ -47,30 +47,31 @@ fn internal_find_deaths(
     }
 }
 
-pub fn mark_live_in_range<F0, F1>(
-    var: &SSARegister,
-    begin: Location,
-    end: Location,
-    mut is_marked: F0,
-    mut mark: F1,
-    graph: &CtrlFlow,
-) where
-    F0: FnMut(&SSARegister, &Instruction, Location) -> bool,
-    F1: FnMut(&SSARegister, &Instruction, Location),
-{
-    internal_mark_live_in_range(var, begin, end, &mut is_marked, &mut mark, graph);
+pub trait LivenessAccumulator {
+    fn is_marked(&self, reg: &SSARegister, loc: Location) -> bool;
+    fn mark(&mut self, reg: &SSARegister, loc: Location);
 }
 
-fn internal_mark_live_in_range<F0, F1>(
+pub fn mark_live_in_range<A>(
     var: &SSARegister,
     begin: Location,
     end: Location,
-    is_marked: &mut F0,
-    mark: &mut F1,
+    accumulator: &mut A,
     graph: &CtrlFlow,
 ) where
-    F0: FnMut(&SSARegister, &Instruction, Location) -> bool,
-    F1: FnMut(&SSARegister, &Instruction, Location),
+    A: LivenessAccumulator,
+{
+    internal_mark_live_in_range(var, begin, end, accumulator, graph);
+}
+
+fn internal_mark_live_in_range<A>(
+    var: &SSARegister,
+    begin: Location,
+    end: Location,
+    accumulator: &mut A,
+    graph: &CtrlFlow,
+) where
+    A: LivenessAccumulator,
 {
     // TODO: Optimise this
     for (offset, ins) in graph
@@ -82,14 +83,14 @@ fn internal_mark_live_in_range<F0, F1>(
     {
         let cur_location = Location::new(end.block_handle(), offset);
         // This is a branch that we've already marked
-        if is_marked(var, ins, cur_location) {
+        if accumulator.is_marked(var, cur_location) {
             return;
         }
 
         let is_before_end = cur_location == end || cur_location.is_before(graph, &end);
         let is_after_begin = cur_location == begin || cur_location.is_after(graph, &begin);
         if is_before_end && is_after_begin {
-            mark(var, ins, cur_location);
+            accumulator.mark(var, cur_location);
         }
     }
 
@@ -101,8 +102,7 @@ fn internal_mark_live_in_range<F0, F1>(
                 predecessor,
                 predecessor.realise(graph).instructions().len() - 1,
             ),
-            is_marked,
-            mark,
+            accumulator,
             graph,
         );
     }
