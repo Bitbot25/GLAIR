@@ -1,5 +1,6 @@
+use std::hash::Hash;
+
 pub mod cfg;
-mod galloc_impl;
 mod impl_amd;
 mod impl_misc;
 
@@ -8,6 +9,7 @@ pub trait ILSized {
 }
 
 /// Immediate (literal) value.
+#[derive(Debug)]
 pub enum Immediate {
     U32(u32),
 }
@@ -45,11 +47,13 @@ impl ILSized for burnerflame::Register {
 }
 
 /// A SSARegister or Immediate value
+#[derive(Debug)]
 pub enum RValue {
     SSARegister(SSARegister),
     Immediate(Immediate),
 }
 
+#[derive(Debug, Copy, Clone)]
 pub enum ILSize {
     Pointer,
     Integer { width_in_bytes: usize },
@@ -74,9 +78,16 @@ impl ILSize {
     }
 }
 
+#[derive(Debug, Copy, Clone)]
 pub struct PlaceholderReg {
     pub identifier: usize,
     pub size: ILSize,
+}
+
+impl Hash for PlaceholderReg {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        state.write_usize(self.identifier);
+    }
 }
 
 impl Eq for PlaceholderReg {}
@@ -87,44 +98,55 @@ impl PartialEq for PlaceholderReg {
     }
 }
 
-#[derive(PartialEq, Eq)]
+#[derive(Hash, Debug, Copy, Clone, PartialEq, Eq)]
 pub enum MachineReg {
     AMD64(burnerflame::Register),
 }
 
-#[derive(PartialEq, Eq)]
-pub enum SSARegister {
-    Placeholder(PlaceholderReg),
-    MachineRegister(MachineReg),
+#[derive(Hash, Debug, Copy, Clone, PartialEq, Eq)]
+pub struct SSARegister {
+    id: usize,
+    machine_reg: Option<MachineReg>,
 }
 
-/// Allocates memory on the stack and places the pointer on [`ptr_out`]
+/// Allocates memory on the stack and places the pointer in [`out_pointer`]
+#[derive(Debug)]
 pub struct Reserve {
     pub size: ILSize,
     pub out_pointer: SSARegister,
 }
 
 /// Writes [`value`] to [`destination`]
+#[derive(Debug)]
 pub struct Write {
     pub destination: SSARegister,
     pub value: RValue,
 }
 
 /// Reads the data pointed to by [`target`] into [`out_data`]
+#[derive(Debug)]
 pub struct Read {
     pub target: SSARegister,
     pub out_data: SSARegister,
 }
 
 /// Returns the value found in [`register`]
+#[derive(Debug)]
 pub struct Return {
     pub register: Option<SSARegister>,
 }
 
+#[derive(Debug)]
+pub struct DummyUse {
+    pub register: SSARegister,
+}
+
 /// IL Instruction
+#[derive(Debug)]
 pub enum Instruction {
     Reserve(Reserve),
     Write(Write),
+    DummyUse(DummyUse),
     Read(Read),
     Return(Return),
 }
