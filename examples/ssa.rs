@@ -13,12 +13,12 @@ fn main() {
     let eax = il::SSARegister::machine_reg(0, il::MachineReg::AMD64(burnerflame::Register::EAX));
     let ecx = il::SSARegister::machine_reg(1, il::MachineReg::AMD64(burnerflame::Register::ECX));
     let entry_block = cfg.insert_block(cfg::Block::new(vec![
+        il::Instruction::DummyUse(il::DummyUse { register: ecx }),
         il::Instruction::Write(il::Write {
             destination: eax,
             value: il::RValue::Immediate(il::Immediate::U32(16)),
         }),
         il::Instruction::DummyUse(il::DummyUse { register: eax }),
-        il::Instruction::DummyUse(il::DummyUse { register: ecx }),
         il::Instruction::Return(il::Return { register: None }),
     ]));
     let other_block = cfg.insert_block(cfg::Block::new(vec![il::Instruction::DummyUse(
@@ -31,7 +31,6 @@ fn main() {
 
     for var in vars {
         let deaths = liveness::find_deaths(var, entry_block, &cfg);
-        dbg!(&deaths);
         for death in deaths {
             liveness::mark_live_in_range(
                 var,
@@ -42,10 +41,14 @@ fn main() {
             );
         }
     }
-    let ifr_graph = ifr::construct_ssa(
+    let ifr_graph = ifr::construct(
         ifr_accum
             .into_iter()
-            .map(|(reg, live_locs)| (reg, InterferenceData::new(live_locs))),
+            .map(|(reg, live_locs)| {
+                InterferenceData::new(liveness::merge_to_ranges(live_locs, &cfg), &reg)
+            })
+            .collect(),
+        &cfg,
     );
     dbg!(ifr_graph);
 

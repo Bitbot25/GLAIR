@@ -1,6 +1,9 @@
 use std::{collections::HashMap, fmt};
 
-use crate::il::{cfg::Location, SSARegister};
+use crate::il::{
+    cfg::{CtrlFlow, LocalRange, Location},
+    SSARegister,
+};
 
 use super::liveness::LivenessAccumulator;
 
@@ -60,6 +63,16 @@ pub struct Node<T> {
 
     /// Edge going from this node
     next_edge: EdgeIndex,
+}
+
+impl<T: Copy> Copy for Node<T> {}
+impl<T: Clone> Clone for Node<T> {
+    fn clone(&self) -> Self {
+        Node {
+            next_edge: self.next_edge,
+            data: self.data.clone(),
+        }
+    }
 }
 
 impl<T: fmt::Debug> fmt::Debug for Node<T> {
@@ -134,7 +147,7 @@ impl<T> InterferenceGraph<T> {
     }
 
     #[inline]
-    pub fn has_edge(&mut self, a: NodeIndex, b: NodeIndex) -> bool {
+    pub fn has_edge(&self, a: NodeIndex, b: NodeIndex) -> bool {
         // TODO: optimise this
         self.neighbors_vec(a).contains(&b)
     }
@@ -182,21 +195,23 @@ impl<T> InterferenceGraph<T> {
     }
 }
 
-pub struct InterferenceData {
-    live: Vec<Location>,
+#[derive(Debug)]
+pub struct InterferenceData<'a> {
+    ranges: Vec<LocalRange>,
+    variable: &'a SSARegister,
 }
 
-impl InterferenceData {
-    pub fn new(live: Vec<Location>) -> Self {
-        Self { live }
+impl<'a> InterferenceData<'a> {
+    pub fn new(ranges: Vec<LocalRange>, variable: &'a SSARegister) -> Self {
+        Self { ranges, variable }
     }
 }
 
-pub struct InterferenceAccum {
-    map: HashMap<SSARegister, Vec<Location>>,
+pub struct InterferenceAccum<'a> {
+    map: HashMap<&'a SSARegister, Vec<Location>>,
 }
 
-impl InterferenceAccum {
+impl<'a> InterferenceAccum<'a> {
     pub fn new() -> Self {
         Self {
             map: HashMap::new(),
@@ -210,18 +225,18 @@ impl InterferenceAccum {
         }
     }
 
-    pub fn mark_live_at(&mut self, reg: &SSARegister, loc: Location) {
+    pub fn mark_live_at(&mut self, reg: &'a SSARegister, loc: Location) {
         match self.map.get_mut(reg) {
             Some(list) => list.push(loc),
             None => {
-                self.map.insert(*reg, vec![loc]);
+                self.map.insert(reg, vec![loc]);
             }
         }
     }
 }
 
-impl LivenessAccumulator for InterferenceAccum {
-    fn mark(&mut self, reg: &SSARegister, loc: Location) {
+impl<'a> LivenessAccumulator<'a> for InterferenceAccum<'a> {
+    fn mark(&mut self, reg: &'a SSARegister, loc: Location) {
         self.mark_live_at(reg, loc)
     }
 
@@ -230,8 +245,8 @@ impl LivenessAccumulator for InterferenceAccum {
     }
 }
 
-impl IntoIterator for InterferenceAccum {
-    type Item = (SSARegister, Vec<Location>);
+impl<'a> IntoIterator for InterferenceAccum<'a> {
+    type Item = (&'a SSARegister, Vec<Location>);
     type IntoIter = impl Iterator<Item = Self::Item>;
 
     fn into_iter(self) -> Self::IntoIter {
@@ -239,44 +254,51 @@ impl IntoIterator for InterferenceAccum {
     }
 }
 
-pub fn construct_ssa(
-    program_variables: impl Iterator<Item = (SSARegister, InterferenceData)>,
-) -> InterferenceGraph<SSARegister> {
-    let mut graph = InterferenceGraph::new();
-    let mut ifr_set: HashMap<Location, Vec<&SSARegister>> = HashMap::new();
-    let mut handle_map: HashMap<&SSARegister, NodeIndex> = HashMap::new();
+#[derive(Debug, Copy, Clone)]
+pub struct InterferenceRange<'a> {
+    range: LocalRange,
+    variable: &'a SSARegister,
+}
 
-    // TODO: Maybe a solution without collecting the vector?
-    let program_variables: Vec<(SSARegister, InterferenceData)> = program_variables.collect();
+impl<'a> InterferenceRange<'a> {
+    fn new(range: LocalRange, variable: &'a SSARegister) -> Self {
+        Self { range, variable }
+    }
 
-    for (var, ifr_data) in &program_variables {
-        let handle = graph.add_node(*var);
-        handle_map.insert(var, handle);
-        for loc in &ifr_data.live {
-            match ifr_set.get_mut(loc) {
-                Some(list) => {
-                    list.push(&var);
-                }
-                None => {
-                    ifr_set.insert(*loc, vec![&var]);
+    fn intersects(&self, other: &InterferenceRange) -> bool {
+        self.range.intersects(&other.range)
+    }
+}
+
+pub fn construct<'var>(
+    variable_interference: Vec<InterferenceData<'var>>,
+    cfg: &CtrlFlow,
+) -> InterferenceGraph<InterferenceRange<'var>> {
+    let mut graph: InterferenceGraph<InterferenceRange> = InterferenceGraph::new();
+
+    for InterferenceData { ranges, variable } in variable_interference {
+        for live_range in ranges {
+            graph.add_node(InterferenceRange::new(live_range, variable));
+        }
+    }
+
+    // TODO: Optimise this so that we don't need to clone the nodes
+    for (it, node) in graph.nodes.clone().into_iter().enumerate() {
+        let node_ifr = node.data();
+        let node_index = NodeIndex(it);
+        for (o_idx, other) in graph.nodes.clone()[it + 1..].iter().enumerate() {
+            let o_idx = o_idx + it + 1;
+            let other_ifr = other.data();
+            let other_index = NodeIndex(o_idx);
+            if other_ifr.intersects(node_ifr) {
+                if graph.has_edge(node_index, other_index) {
+                    eprintln!("optimise: this node already has an edge");
+                } else {
+                    graph.add_edge(node_index, other_index);
                 }
             }
         }
     }
-    for cluster in ifr_set.values() {
-        for (it, var) in cluster.iter().enumerate() {
-            let var = handle_map[var];
-            for connection in &cluster[it..] {
-                let connection = handle_map[connection];
-                if connection == var {
-                    continue;
-                }
 
-                if !graph.has_edge(var, connection) {
-                    graph.add_edge(var, connection);
-                }
-            }
-        }
-    }
     graph
 }

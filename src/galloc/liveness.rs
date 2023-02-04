@@ -1,6 +1,6 @@
 use crate::il::{
-    cfg::{BlockHandle, CtrlFlow, Location},
-    Instruction, SSARegister,
+    cfg::{BlockHandle, CtrlFlow, LocalRange, Location},
+    SSARegister,
 };
 
 pub fn find_deaths(var: &SSARegister, begin: BlockHandle, cfg: &CtrlFlow) -> Vec<Location> {
@@ -47,31 +47,108 @@ fn internal_find_deaths(
     }
 }
 
-pub trait LivenessAccumulator {
+pub trait LivenessAccumulator<'a> {
     fn is_marked(&self, reg: &SSARegister, loc: Location) -> bool;
-    fn mark(&mut self, reg: &SSARegister, loc: Location);
+    fn mark(&mut self, reg: &'a SSARegister, loc: Location);
 }
 
-pub fn mark_live_in_range<A>(
-    var: &SSARegister,
+struct ZipAny<A, B> {
+    a: A,
+    b: B,
+}
+
+impl<A, B> ZipAny<A, B> {
+    fn new(a: A, b: B) -> Self {
+        Self { a, b }
+    }
+}
+
+enum ZipAnyPair<T> {
+    First(T),
+    Second(T),
+    Both(T, T),
+}
+
+impl<T, A, B> Iterator for ZipAny<A, B>
+where
+    A: Iterator<Item = T>,
+    B: Iterator<Item = T>,
+{
+    type Item = ZipAnyPair<T>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let a_res = self.a.next();
+        let b_res = self.b.next();
+        match a_res {
+            Some(a) => match b_res {
+                Some(b) => Some(ZipAnyPair::Both(a, b)),
+                None => Some(ZipAnyPair::First(a)),
+            },
+            None => match b_res {
+                Some(b) => Some(ZipAnyPair::Second(b)),
+                None => None,
+            },
+        }
+    }
+}
+
+/// Simply convert the locations to ranges of length 1. This is harder on the register allocator / ifr graph, but might give more intelligent results.
+pub fn strict_to_ranges(locations: Vec<Location>, cfg: &CtrlFlow) -> Vec<LocalRange> {
+    let mut ranges = Vec::new();
+    for loc in locations {
+        ranges.push(LocalRange::point(loc));
+    }
+    ranges
+}
+
+// TODO: Make additional splits where variables die so that the register allocator has more opportunities?
+/// Merge adjacent locations into ranges of variable length. This is easier on the register allocator than [`strict_to_ranges`], but might yield worse results.
+pub fn merge_to_ranges(locations: Vec<Location>, cfg: &CtrlFlow) -> Vec<LocalRange> {
+    // TODO: optimise this
+    let mut ranges: Vec<LocalRange> = Vec::new();
+    'a: for loc in locations {
+        for range in &mut ranges {
+            if loc.block_handle() != range.block() {
+                continue;
+            }
+            if range.loc_intersects(&loc) {
+                // This location is already featured in a range, skip this one.
+                continue 'a;
+            }
+
+            if loc.offset() == range.to() + 1 {
+                *range = LocalRange::new(range.from(), loc.offset(), range.block());
+                continue 'a;
+            } else if range.from() != 0 && loc.offset() == range.from() - 1 {
+                *range = LocalRange::new(loc.offset(), range.to(), range.block());
+                continue 'a;
+            }
+        }
+        ranges.push(LocalRange::point(loc));
+    }
+    ranges
+}
+
+pub fn mark_live_in_range<'a, A>(
+    var: &'a SSARegister,
     begin: Location,
     end: Location,
     accumulator: &mut A,
     graph: &CtrlFlow,
 ) where
-    A: LivenessAccumulator,
+    A: LivenessAccumulator<'a>,
 {
     internal_mark_live_in_range(var, begin, end, accumulator, graph);
 }
 
-fn internal_mark_live_in_range<A>(
-    var: &SSARegister,
+fn internal_mark_live_in_range<'a, A>(
+    var: &'a SSARegister,
     begin: Location,
     end: Location,
     accumulator: &mut A,
     graph: &CtrlFlow,
 ) where
-    A: LivenessAccumulator,
+    A: LivenessAccumulator<'a>,
 {
     // TODO: Optimise this
     for (offset, ins) in graph
@@ -82,6 +159,7 @@ fn internal_mark_live_in_range<A>(
         .rev()
     {
         let cur_location = Location::new(end.block_handle(), offset);
+
         // This is a branch that we've already marked
         if accumulator.is_marked(var, cur_location) {
             return;
@@ -100,7 +178,7 @@ fn internal_mark_live_in_range<A>(
             begin,
             Location::new(
                 predecessor,
-                predecessor.realise(graph).instructions().len() - 1,
+                graph.realise_handle(predecessor).instructions().len() - 1,
             ),
             accumulator,
             graph,
