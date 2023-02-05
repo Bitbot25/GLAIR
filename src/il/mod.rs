@@ -1,8 +1,11 @@
 use std::hash::Hash;
 
+use self::amd::AmdRegister;
+pub mod amd;
 pub mod cfg;
 mod impl_amd;
 mod impl_misc;
+mod reg;
 
 pub trait ILSized {
     fn il_size(&self) -> ILSize;
@@ -98,15 +101,29 @@ impl PartialEq for PlaceholderReg {
     }
 }
 
-#[derive(Hash, Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum MachineReg {
-    AMD64(burnerflame::Register),
+    AMD64(AmdRegister),
 }
 
-#[derive(Hash, Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone)]
 pub struct SSARegister {
     id: usize,
     machine_reg: Option<MachineReg>,
+}
+
+impl PartialEq for SSARegister {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+
+impl Eq for SSARegister {}
+
+impl Hash for SSARegister {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        state.write_usize(self.id);
+    }
 }
 
 /// Allocates memory on the stack and places the pointer in [`out_pointer`]

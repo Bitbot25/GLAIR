@@ -1,17 +1,15 @@
-use burnerflame::{AssmMov, AssmRet};
 use glair::galloc::ifr;
-use glair::galloc::ifr::InterferenceData;
 use glair::galloc::liveness;
 use glair::il;
+use glair::il::amd;
 use glair::il::cfg;
-use glair::linux64;
-use std::mem;
 
 fn main() {
     let mut cfg = cfg::CtrlFlow::new();
 
-    let eax = il::SSARegister::machine_reg(0, il::MachineReg::AMD64(burnerflame::Register::EAX));
-    let ecx = il::SSARegister::machine_reg(1, il::MachineReg::AMD64(burnerflame::Register::ECX));
+    let eax = il::SSARegister::machine_reg(0, il::MachineReg::AMD64(amd::eax()));
+    let ecx = il::SSARegister::machine_reg(1, il::MachineReg::AMD64(amd::ecx()));
+
     let entry_block = cfg.insert_block(cfg::Block::new(vec![
         il::Instruction::DummyUse(il::DummyUse { register: ecx }),
         il::Instruction::Write(il::Write {
@@ -26,30 +24,23 @@ fn main() {
     )]));
     cfg.add_directed_edge(entry_block, other_block);
 
-    let mut ifr_accum = ifr::InterferenceAccum::new();
     let vars = &[eax, ecx];
+    let mut range_builder = liveness::LiveRangesBuilder::default();
 
     for var in vars {
         let deaths = liveness::find_deaths(var, entry_block, &cfg);
-        for death in deaths {
+        dbg!(&deaths);
+        for death in &deaths {
             liveness::mark_live_in_range(
                 var,
                 cfg::Location::new(entry_block, 0),
-                death,
-                &mut ifr_accum,
+                *death,
+                &mut range_builder,
                 &cfg,
             );
         }
     }
-    let ifr_graph = ifr::construct(
-        ifr_accum
-            .into_iter()
-            .map(|(reg, live_locs)| {
-                InterferenceData::new(liveness::merge_to_ranges(live_locs, &cfg), &reg)
-            })
-            .collect(),
-        &cfg,
-    );
+    let ifr_graph = ifr::construct(range_builder.build());
     dbg!(ifr_graph);
 
     /*let mut assembler = burnerflame::Assembler::new();

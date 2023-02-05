@@ -1,11 +1,5 @@
-use std::{collections::HashMap, fmt};
-
-use crate::il::{
-    cfg::{CtrlFlow, LocalRange, Location},
-    SSARegister,
-};
-
-use super::liveness::LivenessAccumulator;
+use super::liveness::LiveRange;
+use std::fmt;
 
 // FIXME: Manual debug impls for NodeIndex and EdgeIndex because it looks wierd when it's none
 
@@ -182,11 +176,7 @@ impl<T> InterferenceGraph<T> {
             } else {
                 result.push(current_edge.node[0]);
             }
-            let next_edge_choose = if current_edge.node[0] == base_node {
-                0
-            } else {
-                1
-            };
+            let next_edge_choose = usize::from(current_edge.node[0] != base_node);
             let next_edge = current_edge.next_edges[next_edge_choose];
 
             edge = next_edge;
@@ -195,110 +185,29 @@ impl<T> InterferenceGraph<T> {
     }
 }
 
-#[derive(Debug)]
-pub struct InterferenceData<'a> {
-    ranges: Vec<LocalRange>,
-    variable: &'a SSARegister,
-}
+pub fn construct(ranges: Vec<LiveRange>) -> InterferenceGraph<LiveRange> {
+    let mut graph = InterferenceGraph::new();
 
-impl<'a> InterferenceData<'a> {
-    pub fn new(ranges: Vec<LocalRange>, variable: &'a SSARegister) -> Self {
-        Self { ranges, variable }
-    }
-}
-
-pub struct InterferenceAccum<'a> {
-    map: HashMap<&'a SSARegister, Vec<Location>>,
-}
-
-impl<'a> InterferenceAccum<'a> {
-    pub fn new() -> Self {
-        Self {
-            map: HashMap::new(),
-        }
+    for range in ranges {
+        graph.add_node(range);
     }
 
-    pub fn is_live_at(&self, reg: &SSARegister, loc: Location) -> bool {
-        match self.map.get(reg) {
-            Some(list) => list.contains(&loc),
-            None => false,
-        }
-    }
-
-    pub fn mark_live_at(&mut self, reg: &'a SSARegister, loc: Location) {
-        match self.map.get_mut(reg) {
-            Some(list) => list.push(loc),
-            None => {
-                self.map.insert(reg, vec![loc]);
+    let nodes_len = graph.nodes.len();
+    for i in 0..nodes_len {
+        for j in i + 1..nodes_len {
+            // TODO: We have to access node_a in every iteration because of the borrow checker :(
+            let node_a = &graph.nodes[i];
+            let node_b = &graph.nodes[j];
+            if !graph.has_edge(NodeIndex(i), NodeIndex(j)) && node_a.data().overlaps(node_b.data())
+            {
+                graph.add_edge(NodeIndex(i), NodeIndex(j));
             }
         }
     }
-}
 
-impl<'a> LivenessAccumulator<'a> for InterferenceAccum<'a> {
-    fn mark(&mut self, reg: &'a SSARegister, loc: Location) {
-        self.mark_live_at(reg, loc)
-    }
-
-    fn is_marked(&self, reg: &SSARegister, loc: Location) -> bool {
-        self.is_live_at(reg, loc)
-    }
-}
-
-impl<'a> IntoIterator for InterferenceAccum<'a> {
-    type Item = (&'a SSARegister, Vec<Location>);
-    type IntoIter = impl Iterator<Item = Self::Item>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.map.into_iter()
-    }
-}
-
-#[derive(Debug, Copy, Clone)]
-pub struct InterferenceRange<'a> {
-    range: LocalRange,
-    variable: &'a SSARegister,
-}
-
-impl<'a> InterferenceRange<'a> {
-    fn new(range: LocalRange, variable: &'a SSARegister) -> Self {
-        Self { range, variable }
-    }
-
-    fn intersects(&self, other: &InterferenceRange) -> bool {
-        self.range.intersects(&other.range)
-    }
-}
-
-pub fn construct<'var>(
-    variable_interference: Vec<InterferenceData<'var>>,
-    cfg: &CtrlFlow,
-) -> InterferenceGraph<InterferenceRange<'var>> {
-    let mut graph: InterferenceGraph<InterferenceRange> = InterferenceGraph::new();
-
-    for InterferenceData { ranges, variable } in variable_interference {
-        for live_range in ranges {
-            graph.add_node(InterferenceRange::new(live_range, variable));
-        }
-    }
-
-    // TODO: Optimise this so that we don't need to clone the nodes
-    for (it, node) in graph.nodes.clone().into_iter().enumerate() {
-        let node_ifr = node.data();
-        let node_index = NodeIndex(it);
-        for (o_idx, other) in graph.nodes.clone()[it + 1..].iter().enumerate() {
-            let o_idx = o_idx + it + 1;
-            let other_ifr = other.data();
-            let other_index = NodeIndex(o_idx);
-            if other_ifr.intersects(node_ifr) {
-                if graph.has_edge(node_index, other_index) {
-                    eprintln!("optimise: this node already has an edge");
-                } else {
-                    graph.add_edge(node_index, other_index);
-                }
-            }
-        }
-    }
+    /*for node in graph.nodes {
+        let data = node.data();
+    }*/
 
     graph
 }

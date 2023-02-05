@@ -11,15 +11,9 @@ impl PlaceholderReg {
 }
 
 impl MachineReg {
-    pub fn unwrap_as_amd64(&self) -> &burnerflame::Register {
+    pub fn as_raw_amd64(&self) -> &burnerflame::Register {
         match self {
-            Self::AMD64(amd) => amd,
-        }
-    }
-
-    pub fn unwrap_into_amd64(self) -> burnerflame::Register {
-        match self {
-            Self::AMD64(amd) => amd,
+            Self::AMD64(reg) => reg.libmc(),
         }
     }
 }

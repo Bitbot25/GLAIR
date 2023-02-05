@@ -111,62 +111,6 @@ impl Location {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub struct LocalRange {
-    from: usize,
-    to: usize,
-    block: BlockHandle,
-}
-
-impl LocalRange {
-    pub fn point(location: Location) -> Self {
-        LocalRange {
-            from: location.offset(),
-            to: location.offset() + 1,
-            block: location.block_handle(),
-        }
-    }
-
-    pub fn new(from: usize, to: usize, block: BlockHandle) -> Self {
-        Self { from, to, block }
-    }
-
-    pub fn from(&self) -> usize {
-        self.from
-    }
-
-    pub fn to(&self) -> usize {
-        self.to
-    }
-
-    pub fn block(&self) -> BlockHandle {
-        self.block
-    }
-
-    pub fn intersects(&self, other: &LocalRange) -> bool {
-        other.block == self.block && {
-            let from_intersects = self.from >= other.from && self.from < other.to;
-            let to_intersects = self.to > other.from && self.to <= other.to;
-            from_intersects || to_intersects
-        }
-    }
-
-    pub fn loc_intersects(&self, other: &Location) -> bool {
-        self.intersects(&LocalRange::point(*other))
-    }
-
-    #[inline]
-    pub fn touches_max_in_block(&self, cfg: &CtrlFlow) -> bool {
-        let ins_len = cfg.realise_handle(self.block).instructions().len();
-        self.to >= ins_len - 1
-    }
-
-    #[inline]
-    pub fn touches_min_in_block(&self) -> bool {
-        self.from == 0
-    }
-}
-
 #[derive(Debug)]
 struct CtrlFlowEdge {
     from: BlockHandle,
@@ -225,9 +169,9 @@ impl CtrlFlow {
                 return false;
             }
 
-            stack.extend_from_slice(&*self.descendants(h).collect::<Vec<BlockHandle>>());
+            stack.extend_from_slice(&self.descendants(h).collect::<Vec<BlockHandle>>());
         }
-        return false;
+        false
     }
 
     pub fn has_backwards_path(&self, from: BlockHandle, to: BlockHandle) -> bool {
@@ -241,9 +185,9 @@ impl CtrlFlow {
                 return false;
             }
 
-            stack.extend_from_slice(&*self.predecessors(h).collect::<Vec<BlockHandle>>());
+            stack.extend_from_slice(&self.predecessors(h).collect::<Vec<BlockHandle>>());
         }
-        return false;
+        false
     }
 
     pub fn add_directed_edge(&mut self, from: BlockHandle, to: BlockHandle) {

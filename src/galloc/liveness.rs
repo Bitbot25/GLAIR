@@ -1,7 +1,132 @@
+use std::collections::HashMap;
+
 use crate::il::{
-    cfg::{BlockHandle, CtrlFlow, LocalRange, Location},
+    cfg::{BlockHandle, CtrlFlow, Location},
     SSARegister,
 };
+
+#[derive(Debug, Copy, Clone)]
+pub struct LiveSegment {
+    block: BlockHandle,
+    begin: usize,
+    end: usize,
+}
+
+impl LiveSegment {
+    pub fn begin_offset(&self) -> usize {
+        self.begin
+    }
+
+    pub fn end_offset(&self) -> usize {
+        self.end
+    }
+
+    pub fn begin(&self) -> Location {
+        Location::new(self.block, self.begin)
+    }
+
+    pub fn end(&self) -> Location {
+        Location::new(self.block, self.end)
+    }
+
+    pub fn is_adjacent_with(&self, other: &LiveSegment) -> bool {
+        self.block == other.block && {
+            let end_is_adjacent = self.end + 1 == other.begin;
+            let begin_is_adjacent = other.end + 1 == self.begin;
+            end_is_adjacent || begin_is_adjacent
+        }
+    }
+
+    pub fn expand_to(&mut self, other: &LiveSegment) {
+        self.begin = self.begin.min(other.begin);
+        self.end = self.end.max(other.end);
+    }
+
+    #[inline]
+    pub fn contains(&self, location: Location) -> bool {
+        self.block == location.block_handle() && {
+            location.offset() >= self.begin && location.offset() < self.end
+        }
+    }
+
+    #[inline]
+    pub fn overlaps(&self, other: &LiveSegment) -> bool {
+        self.block == other.block && { self.begin <= other.end && other.begin <= self.end }
+    }
+}
+
+#[derive(Default)]
+pub struct LiveRangesBuilder<'a> {
+    locations: HashMap<&'a SSARegister, Vec<Location>>,
+}
+
+impl<'a> LiveRangesBuilder<'a> {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn mark(&mut self, reg: &'a SSARegister, location: Location) {
+        match self.locations.get_mut(reg) {
+            Some(locations) => {
+                locations.push(location);
+            }
+            None => {
+                self.locations.insert(reg, vec![location]);
+            }
+        }
+    }
+
+    pub fn build(self) -> Vec<LiveRange> {
+        let mut out = Vec::new();
+        for (reg, locations) in self.locations {
+            let merged = merge_to_live_segments(locations);
+            out.push(LiveRange {
+                segments: merged,
+                reg: *reg,
+            });
+        }
+        out
+    }
+}
+
+#[derive(Debug)]
+pub struct LiveRange {
+    segments: Vec<LiveSegment>,
+    reg: SSARegister,
+}
+
+impl LiveRange {
+    pub fn overlaps(&self, other: &LiveRange) -> bool {
+        // TODO: Optimise this
+        for segment in &self.segments {
+            if let Some(other) = other.segment_in(segment.block) {
+                if segment.overlaps(other) {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    #[inline]
+    pub fn contains(&self, location: Location) -> bool {
+        self.segments
+            .iter()
+            .any(|segment| segment.contains(location))
+    }
+
+    pub fn segment_in(&self, block: BlockHandle) -> Option<&LiveSegment> {
+        self.segments.iter().find(|&segment| segment.block == block)
+    }
+
+    pub fn segments(&self) -> &Vec<LiveSegment> {
+        &self.segments
+    }
+
+    pub fn reg(&self) -> &SSARegister {
+        &self.reg
+    }
+}
 
 pub fn find_deaths(var: &SSARegister, begin: BlockHandle, cfg: &CtrlFlow) -> Vec<Location> {
     let mut list = Vec::new();
@@ -47,111 +172,76 @@ fn internal_find_deaths(
     }
 }
 
-pub trait LivenessAccumulator<'a> {
-    fn is_marked(&self, reg: &SSARegister, loc: Location) -> bool;
-    fn mark(&mut self, reg: &'a SSARegister, loc: Location);
-}
-
-struct ZipAny<A, B> {
-    a: A,
-    b: B,
-}
-
-impl<A, B> ZipAny<A, B> {
-    fn new(a: A, b: B) -> Self {
-        Self { a, b }
-    }
-}
-
-enum ZipAnyPair<T> {
-    First(T),
-    Second(T),
-    Both(T, T),
-}
-
-impl<T, A, B> Iterator for ZipAny<A, B>
-where
-    A: Iterator<Item = T>,
-    B: Iterator<Item = T>,
-{
-    type Item = ZipAnyPair<T>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let a_res = self.a.next();
-        let b_res = self.b.next();
-        match a_res {
-            Some(a) => match b_res {
-                Some(b) => Some(ZipAnyPair::Both(a, b)),
-                None => Some(ZipAnyPair::First(a)),
-            },
-            None => match b_res {
-                Some(b) => Some(ZipAnyPair::Second(b)),
-                None => None,
-            },
-        }
-    }
-}
-
-/// Simply convert the locations to ranges of length 1. This is harder on the register allocator / ifr graph, but might give more intelligent results.
-pub fn strict_to_ranges(locations: Vec<Location>, cfg: &CtrlFlow) -> Vec<LocalRange> {
-    let mut ranges = Vec::new();
-    for loc in locations {
-        ranges.push(LocalRange::point(loc));
-    }
-    ranges
-}
-
-// TODO: Make additional splits where variables die so that the register allocator has more opportunities?
 /// Merge adjacent locations into ranges of variable length. This is easier on the register allocator than [`strict_to_ranges`], but might yield worse results.
-pub fn merge_to_ranges(locations: Vec<Location>, cfg: &CtrlFlow) -> Vec<LocalRange> {
+fn merge_to_live_segments(locations: Vec<Location>) -> Vec<LiveSegment> {
     // TODO: optimise this
-    let mut ranges: Vec<LocalRange> = Vec::new();
-    'a: for loc in locations {
-        for range in &mut ranges {
-            if loc.block_handle() != range.block() {
-                continue;
-            }
-            if range.loc_intersects(&loc) {
-                // This location is already featured in a range, skip this one.
-                continue 'a;
-            }
+    let mut segments = Vec::new();
 
-            if loc.offset() == range.to() + 1 {
-                *range = LocalRange::new(range.from(), loc.offset(), range.block());
-                continue 'a;
-            } else if range.from() != 0 && loc.offset() == range.from() - 1 {
-                *range = LocalRange::new(loc.offset(), range.to(), range.block());
-                continue 'a;
+    // Initialise the ranges
+    for loc in locations {
+        segments.push(Some(LiveSegment {
+            block: loc.block_handle(),
+            begin: loc.offset(),
+            end: loc.offset() + 1,
+        }));
+    }
+
+    // Now merge
+    let segments_len = segments.len();
+    // SAFETY: Taking the pointer here and using it later is safe because we're not using any function that's reallocating the array
+    let segments_ptr = segments.as_ptr();
+    let mut found_adjacent = true;
+    while found_adjacent {
+        found_adjacent = false;
+        // TODO: This is really bad...
+        let mut i = 0;
+        while i < segments_len {
+            let mut j = i + 1;
+            let seg_ref = &mut segments[i];
+            i += 1;
+            let seg = match seg_ref {
+                Some(seg) => seg,
+                None => continue,
+            };
+            while j < segments_len {
+                // SAFETY: seg and other_ref will never point to the same element
+                let other_ref = unsafe { &mut *(segments_ptr.add(j) as *mut _) };
+                j += 1;
+                let other = match other_ref {
+                    Some(other) => other,
+                    None => continue,
+                };
+                if seg.is_adjacent_with(other) || seg.overlaps(other) {
+                    seg.expand_to(other);
+                    *other_ref = None;
+                    found_adjacent = true;
+                }
             }
         }
-        ranges.push(LocalRange::point(loc));
     }
-    ranges
+
+    segments.into_iter().flatten().collect()
 }
 
-pub fn mark_live_in_range<'a, A>(
+pub fn mark_live_in_range<'a>(
     var: &'a SSARegister,
     begin: Location,
     end: Location,
-    accumulator: &mut A,
+    ranges: &mut LiveRangesBuilder<'a>,
     graph: &CtrlFlow,
-) where
-    A: LivenessAccumulator<'a>,
-{
-    internal_mark_live_in_range(var, begin, end, accumulator, graph);
+) {
+    internal_mark_live_in_range(var, begin, end, ranges, graph);
 }
 
-fn internal_mark_live_in_range<'a, A>(
+fn internal_mark_live_in_range<'a>(
     var: &'a SSARegister,
     begin: Location,
     end: Location,
-    accumulator: &mut A,
+    ranges: &mut LiveRangesBuilder<'a>,
     graph: &CtrlFlow,
-) where
-    A: LivenessAccumulator<'a>,
-{
+) {
     // TODO: Optimise this
-    for (offset, ins) in graph
+    for (offset, _ins) in graph
         .realise_handle(end.block_handle())
         .instructions()
         .iter()
@@ -161,14 +251,14 @@ fn internal_mark_live_in_range<'a, A>(
         let cur_location = Location::new(end.block_handle(), offset);
 
         // This is a branch that we've already marked
-        if accumulator.is_marked(var, cur_location) {
-            return;
-        }
+        //if accumulator.is_marked(var, cur_location) {
+        //    return;
+        //}
 
         let is_before_end = cur_location == end || cur_location.is_before(graph, &end);
         let is_after_begin = cur_location == begin || cur_location.is_after(graph, &begin);
         if is_before_end && is_after_begin {
-            accumulator.mark(var, cur_location);
+            ranges.mark(var, cur_location);
         }
     }
 
@@ -180,7 +270,7 @@ fn internal_mark_live_in_range<'a, A>(
                 predecessor,
                 graph.realise_handle(predecessor).instructions().len() - 1,
             ),
-            accumulator,
+            ranges,
             graph,
         );
     }
