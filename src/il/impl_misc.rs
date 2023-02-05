@@ -1,51 +1,5 @@
 use super::*;
 
-impl PlaceholderReg {
-    pub fn identifier(&self) -> usize {
-        self.identifier
-    }
-
-    pub fn size(&self) -> &ILSize {
-        &self.size
-    }
-}
-
-impl MachineReg {
-    pub fn as_raw_amd64(&self) -> &burnerflame::Register {
-        match self {
-            Self::AMD64(reg) => reg.libmc(),
-        }
-    }
-}
-
-impl SSARegister {
-    pub fn new(id: usize) -> Self {
-        Self {
-            id,
-            machine_reg: None,
-        }
-    }
-
-    pub fn machine_reg(id: usize, machine_reg: MachineReg) -> Self {
-        Self {
-            id,
-            machine_reg: Some(machine_reg),
-        }
-    }
-
-    pub fn has_machine_reg(&self) -> bool {
-        self.machine_reg.is_some()
-    }
-
-    pub fn unwrap_machine_register(&self) -> &MachineReg {
-        self.machine_reg.as_ref().unwrap()
-    }
-
-    pub fn unwrap_into_machine_register(self) -> MachineReg {
-        self.machine_reg.unwrap()
-    }
-}
-
 impl Instruction {
     pub fn generate_amd64(&self, assembler: &mut burnerflame::Assembler) {
         match self {

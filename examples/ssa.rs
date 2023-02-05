@@ -3,12 +3,13 @@ use glair::galloc::liveness;
 use glair::il;
 use glair::il::amd;
 use glair::il::cfg;
+use glair::il::reg;
 
 fn main() {
     let mut cfg = cfg::CtrlFlow::new();
 
-    let eax = il::SSARegister::machine_reg(0, il::MachineReg::AMD64(amd::eax()));
-    let ecx = il::SSARegister::machine_reg(1, il::MachineReg::AMD64(amd::ecx()));
+    let eax = reg::SSARegister::of_mc_register(0, reg::MachineReg::AMD64(amd::eax()));
+    let ecx = reg::SSARegister::of_mc_register(1, reg::MachineReg::AMD64(amd::ecx()));
 
     let entry_block = cfg.insert_block(cfg::Block::new(vec![
         il::Instruction::DummyUse(il::DummyUse { register: ecx }),

@@ -19,7 +19,7 @@ impl Return {
 impl Write {
     pub fn generate_amd64(&self, buf: &mut burnerflame::Assembler) {
         let Self { destination, value } = self;
-        let destination = destination.unwrap_machine_register().as_raw_amd64();
+        let destination = destination.mc_register().unwrap().as_raw_amd64();
         let destination_sz = destination.il_size().width();
 
         match destination_sz {
@@ -29,7 +29,7 @@ impl Write {
                     // buf.mov(burnerflame::Register64::new(destination), *imm_u32)
                 }
                 RValue::SSARegister(value_reg) => {
-                    let value_reg = value_reg.unwrap_machine_register().as_raw_amd64();
+                    let value_reg = value_reg.mc_register().unwrap().as_raw_amd64();
                     match value_reg.il_size().width() {
                         8 => buf.mov(
                             burnerflame::Register64::new(*destination),
@@ -44,7 +44,7 @@ impl Write {
                     buf.mov(burnerflame::Register32::new(*destination), *imm_u32)
                 }
                 RValue::SSARegister(value_reg) => {
-                    let value_reg = value_reg.unwrap_machine_register().as_raw_amd64();
+                    let value_reg = value_reg.mc_register().unwrap().as_raw_amd64();
                     match value_reg.il_size().width() {
                         4 => buf.mov(
                             burnerflame::Register32::new(*destination),
@@ -60,7 +60,7 @@ impl Write {
                     // buf.mov(burnerflame::Register16::new(destination), imm_u32)
                 }
                 RValue::SSARegister(value_reg) => {
-                    let value_reg = value_reg.unwrap_machine_register().as_raw_amd64();
+                    let value_reg = value_reg.mc_register().unwrap().as_raw_amd64();
                     match value_reg.il_size().width() {
                         2 => buf.mov(
                             burnerflame::Register16::new(*destination),

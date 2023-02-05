@@ -1,5 +1,7 @@
 use std::fmt::{self, Debug};
 
+use super::{ILSize, ILSized};
+
 #[derive(Debug)]
 pub enum AmdRegUnit {
     AL,
@@ -56,6 +58,34 @@ impl AmdRegister {
 
     pub fn units(&self) -> &'static [AmdRegUnit] {
         self.0.units
+    }
+}
+
+impl ILSized for AmdRegister {
+    fn il_size(&self) -> ILSize {
+        self.0.libmc.il_size()
+    }
+}
+
+impl ILSized for burnerflame::Register {
+    fn il_size(&self) -> ILSize {
+        if self.is_64bit() {
+            ILSize::Integer {
+                width_in_bytes: 64 / 8,
+            }
+        } else if self.is_32bit() {
+            ILSize::Integer {
+                width_in_bytes: 32 / 8,
+            }
+        } else if self.is_16bit() {
+            ILSize::Integer {
+                width_in_bytes: 16 / 8,
+            }
+        } else if self.is_8bit() {
+            ILSize::Integer { width_in_bytes: 1 }
+        } else {
+            panic!("Unknown size")
+        }
     }
 }
 

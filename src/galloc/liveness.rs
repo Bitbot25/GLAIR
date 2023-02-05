@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::il::{
     cfg::{BlockHandle, CtrlFlow, Location},
-    SSARegister,
+    reg::SSARegister,
 };
 
 #[derive(Debug, Copy, Clone)]

@@ -1,11 +1,10 @@
-use std::hash::Hash;
-
-use self::amd::AmdRegister;
 pub mod amd;
 pub mod cfg;
 mod impl_amd;
 mod impl_misc;
-mod reg;
+pub mod reg;
+
+use reg::SSARegister;
 
 pub trait ILSized {
     fn il_size(&self) -> ILSize;
@@ -23,28 +22,6 @@ impl ILSized for Immediate {
             Immediate::U32(_) => ILSize::Integer {
                 width_in_bytes: 32 / 8,
             },
-        }
-    }
-}
-
-impl ILSized for burnerflame::Register {
-    fn il_size(&self) -> ILSize {
-        if self.is_64bit() {
-            ILSize::Integer {
-                width_in_bytes: 64 / 8,
-            }
-        } else if self.is_32bit() {
-            ILSize::Integer {
-                width_in_bytes: 32 / 8,
-            }
-        } else if self.is_16bit() {
-            ILSize::Integer {
-                width_in_bytes: 16 / 8,
-            }
-        } else if self.is_8bit() {
-            ILSize::Integer { width_in_bytes: 1 }
-        } else {
-            panic!("Unknown size")
         }
     }
 }
@@ -78,51 +55,6 @@ impl ILSize {
             ILSize::Integer { width_in_bytes } => *width_in_bytes,
             ILSize::Structure { width_in_bytes } => *width_in_bytes,
         }
-    }
-}
-
-#[derive(Debug, Copy, Clone)]
-pub struct PlaceholderReg {
-    pub identifier: usize,
-    pub size: ILSize,
-}
-
-impl Hash for PlaceholderReg {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        state.write_usize(self.identifier);
-    }
-}
-
-impl Eq for PlaceholderReg {}
-
-impl PartialEq for PlaceholderReg {
-    fn eq(&self, other: &Self) -> bool {
-        self.identifier == other.identifier
-    }
-}
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum MachineReg {
-    AMD64(AmdRegister),
-}
-
-#[derive(Debug, Copy, Clone)]
-pub struct SSARegister {
-    id: usize,
-    machine_reg: Option<MachineReg>,
-}
-
-impl PartialEq for SSARegister {
-    fn eq(&self, other: &Self) -> bool {
-        self.id == other.id
-    }
-}
-
-impl Eq for SSARegister {}
-
-impl Hash for SSARegister {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        state.write_usize(self.id);
     }
 }
 
