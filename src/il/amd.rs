@@ -2,7 +2,7 @@ use std::fmt::{self, Debug};
 
 use super::{ILSize, ILSized};
 
-#[derive(Debug)]
+#[derive(PartialEq, Eq, Debug)]
 pub enum AmdRegUnit {
     AL,
     CL,
@@ -58,6 +58,22 @@ impl AmdRegister {
 
     pub fn units(&self) -> &'static [AmdRegUnit] {
         self.0.units
+    }
+
+    pub fn overlaps(&self, other: &AmdRegister) -> bool {
+        let units_self = self.units();
+        let units_other = other.units();
+        for unit in units_self {
+            if units_other.contains(unit) {
+                return true;
+            }
+        }
+        false
+    }
+
+    pub fn gpr_registers() -> impl Iterator<Item = AmdRegister> {
+        // TODO: More registers
+        [rax(), eax(), ecx()].into_iter()
     }
 }
 

@@ -33,7 +33,7 @@ pub enum RValue {
     Immediate(Immediate),
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(PartialEq, Eq, Debug, Copy, Clone)]
 pub enum ILSize {
     Pointer,
     Integer { width_in_bytes: usize },

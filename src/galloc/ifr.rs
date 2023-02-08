@@ -1,9 +1,9 @@
+use crate::il::{reg::MachineReg, ILSized};
+
 use super::liveness::LiveRange;
 use std::fmt;
 
-// FIXME: Manual debug impls for NodeIndex and EdgeIndex because it looks wierd when it's none
-
-#[derive(Debug, PartialEq, Eq, Copy, Clone)]
+#[derive(PartialEq, Eq, Copy, Clone)]
 pub struct NodeIndex(usize);
 
 impl NodeIndex {
@@ -22,7 +22,18 @@ impl NodeIndex {
         !self.is_none()
     }
 }
-#[derive(Debug, PartialEq, Eq, Copy, Clone)]
+
+impl fmt::Debug for NodeIndex {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.is_some() {
+            write!(f, "NodeIndex({})", self.0)
+        } else {
+            write!(f, "NodeIndex(None)")
+        }
+    }
+}
+
+#[derive(PartialEq, Eq, Copy, Clone)]
 pub struct EdgeIndex(usize);
 
 impl EdgeIndex {
@@ -42,6 +53,16 @@ impl EdgeIndex {
     }
 }
 
+impl fmt::Debug for EdgeIndex {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.is_some() {
+            write!(f, "NodeIndex({})", self.0)
+        } else {
+            write!(f, "NodeIndex(None)")
+        }
+    }
+}
+
 #[derive(Debug)]
 struct Edge {
     /// The two nodes this edge connects
@@ -57,6 +78,9 @@ pub struct Node<T> {
 
     /// Edge going from this node
     next_edge: EdgeIndex,
+
+    dsatur_saturation: usize,
+    color: Option<MachineReg>,
 }
 
 impl<T: Copy> Copy for Node<T> {}
@@ -65,6 +89,8 @@ impl<T: Clone> Clone for Node<T> {
         Node {
             next_edge: self.next_edge,
             data: self.data.clone(),
+            dsatur_saturation: 0,
+            color: None,
         }
     }
 }
@@ -74,6 +100,8 @@ impl<T: fmt::Debug> fmt::Debug for Node<T> {
         f.debug_struct("Node")
             .field("data", &self.data)
             .field("next_edge", &self.next_edge)
+            .field("dsatur_saturation", &self.dsatur_saturation)
+            .field("color", &self.color)
             .finish()
     }
 }
@@ -115,6 +143,8 @@ impl<T> InterferenceGraph<T> {
         let node = Node {
             data,
             next_edge: EdgeIndex::none(),
+            dsatur_saturation: 0,
+            color: None,
         };
         self.nodes.push(node);
         NodeIndex(index)
@@ -182,6 +212,60 @@ impl<T> InterferenceGraph<T> {
             edge = next_edge;
         }
         result
+    }
+}
+
+pub fn dsatur_choose_uncolored_node<T>(ifr_graph: &mut InterferenceGraph<T>) -> Option<NodeIndex> {
+    let mut max_node: Option<NodeIndex> = None;
+    for (i, node) in ifr_graph.nodes.iter().enumerate() {
+        if node.color.is_some() {
+            continue;
+        }
+        match &mut max_node {
+            Some(max_node_index) => {
+                // TODO: Tiebreakers
+                let max_node = ifr_graph.get_node(*max_node_index);
+                if node.dsatur_saturation > max_node.dsatur_saturation {
+                    *max_node_index = NodeIndex(i);
+                }
+            }
+            None => max_node = Some(NodeIndex(i)),
+        }
+    }
+    max_node
+}
+
+pub fn dsatur<T: ILSized>(ifr_graph: &mut InterferenceGraph<T>) {
+    // FIXME: Support for more than AMD
+    while let Some(node_index) = dsatur_choose_uncolored_node(ifr_graph) {
+        // TODO: Optimise this
+        let neighbor_colors: Vec<MachineReg> = ifr_graph
+            .neighbors_vec(node_index)
+            .into_iter()
+            .filter_map(|neighbor_index| ifr_graph.get_node(neighbor_index).color)
+            .collect();
+
+        let node = ifr_graph.get_node(node_index);
+        let color = MachineReg::amd_gpr_registers()
+            .filter(|reg| {
+                for neighbor_color in &neighbor_colors {
+                    if neighbor_color.overlaps(reg) {
+                        return false;
+                    }
+                }
+                return true;
+            })
+            .filter(|reg| reg.il_size() == node.data().il_size())
+            .next()
+            .expect("Spilling is not implemented");
+        ifr_graph.get_node_mut(node_index).color = Some(color);
+
+        let saturation_affected_nodes = ifr_graph.neighbors_vec(node_index);
+        for saturation_affected_node in saturation_affected_nodes {
+            ifr_graph
+                .get_node_mut(saturation_affected_node)
+                .dsatur_saturation += 1;
+        }
     }
 }
 

@@ -8,24 +8,34 @@ use glair::il::reg;
 fn main() {
     let mut cfg = cfg::CtrlFlow::new();
 
-    let eax = reg::SSARegister::of_mc_register(0, reg::MachineReg::AMD64(amd::eax()));
-    let ecx = reg::SSARegister::of_mc_register(1, reg::MachineReg::AMD64(amd::ecx()));
+    let r0 = reg::SSARegister::new(
+        0,
+        il::ILSize::Integer {
+            width_in_bytes: 32 / 8,
+        },
+    );
+    let r1 = reg::SSARegister::new(
+        1,
+        il::ILSize::Integer {
+            width_in_bytes: 32 / 8,
+        },
+    );
 
     let entry_block = cfg.insert_block(cfg::Block::new(vec![
-        il::Instruction::DummyUse(il::DummyUse { register: ecx }),
+        il::Instruction::DummyUse(il::DummyUse { register: r1 }),
         il::Instruction::Write(il::Write {
-            destination: eax,
+            destination: r0,
             value: il::RValue::Immediate(il::Immediate::U32(16)),
         }),
-        il::Instruction::DummyUse(il::DummyUse { register: eax }),
+        il::Instruction::DummyUse(il::DummyUse { register: r0 }),
         il::Instruction::Return(il::Return { register: None }),
     ]));
     let other_block = cfg.insert_block(cfg::Block::new(vec![il::Instruction::DummyUse(
-        il::DummyUse { register: eax },
+        il::DummyUse { register: r0 },
     )]));
     cfg.add_directed_edge(entry_block, other_block);
 
-    let vars = &[eax, ecx];
+    let vars = &[r0, r1];
     let mut range_builder = liveness::LiveRangesBuilder::default();
 
     for var in vars {
@@ -41,7 +51,8 @@ fn main() {
             );
         }
     }
-    let ifr_graph = ifr::construct(range_builder.build());
+    let mut ifr_graph = ifr::construct(range_builder.build());
+    ifr::dsatur(&mut ifr_graph);
     dbg!(ifr_graph);
 
     /*let mut assembler = burnerflame::Assembler::new();

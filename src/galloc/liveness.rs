@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use crate::il::{
     cfg::{BlockHandle, CtrlFlow, Location},
     reg::SSARegister,
+    ILSized,
 };
 
 #[derive(Debug, Copy, Clone)]
@@ -125,6 +126,12 @@ impl LiveRange {
 
     pub fn reg(&self) -> &SSARegister {
         &self.reg
+    }
+}
+
+impl ILSized for LiveRange {
+    fn il_size(&self) -> crate::il::ILSize {
+        self.reg.il_size()
     }
 }
 

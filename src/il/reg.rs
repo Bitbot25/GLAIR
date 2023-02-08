@@ -6,6 +6,20 @@ pub enum MachineReg {
     AMD64(AmdRegister),
 }
 
+impl MachineReg {
+    pub fn amd_gpr_registers() -> impl Iterator<Item = MachineReg> {
+        AmdRegister::gpr_registers().map(|reg| MachineReg::AMD64(reg))
+    }
+
+    pub fn overlaps(&self, other: &MachineReg) -> bool {
+        match self {
+            MachineReg::AMD64(this) => match other {
+                MachineReg::AMD64(other) => this.overlaps(other),
+            },
+        }
+    }
+}
+
 impl ILSized for MachineReg {
     fn il_size(&self) -> ILSize {
         match self {
