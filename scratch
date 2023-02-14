@@ -1,3 +1,0 @@
-mov dword [esp-4], 10
-sub esp, 4
-mov dword [esp-4], dword [esp]

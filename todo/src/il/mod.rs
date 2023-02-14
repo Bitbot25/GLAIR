@@ -4,7 +4,7 @@ mod impl_amd;
 mod impl_misc;
 pub mod reg;
 
-use reg::SSARegister;
+use reg::Register;
 
 pub trait ILSized {
     fn il_size(&self) -> ILSize;
@@ -29,7 +29,7 @@ impl ILSized for Immediate {
 /// A SSARegister or Immediate value
 #[derive(Debug)]
 pub enum RValue {
-    SSARegister(SSARegister),
+    SSARegister(Register),
     Immediate(Immediate),
 }
 
@@ -58,44 +58,29 @@ impl ILSize {
     }
 }
 
-/// Allocates memory on the stack and places the pointer in [`out_pointer`]
-#[derive(Debug)]
-pub struct Reserve {
-    pub size: ILSize,
-    pub out_pointer: SSARegister,
-}
-
 /// Writes [`value`] to [`destination`]
 #[derive(Debug)]
 pub struct Write {
-    pub destination: SSARegister,
+    pub destination: Register,
     pub value: RValue,
 }
 
 /// Reads the data pointed to by [`target`] into [`out_data`]
 #[derive(Debug)]
 pub struct Read {
-    pub target: SSARegister,
-    pub out_data: SSARegister,
-}
-
-/// Returns the value found in [`register`]
-#[derive(Debug)]
-pub struct Return {
-    pub register: Option<SSARegister>,
+    pub target: Register,
+    pub out_data: Register,
 }
 
 #[derive(Debug)]
 pub struct DummyUse {
-    pub register: SSARegister,
+    pub register: Register,
 }
 
 /// IL Instruction
 #[derive(Debug)]
 pub enum Instruction {
-    Reserve(Reserve),
     Write(Write),
     DummyUse(DummyUse),
     Read(Read),
-    Return(Return),
 }

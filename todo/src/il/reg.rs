@@ -29,13 +29,13 @@ impl ILSized for MachineReg {
 }
 
 #[derive(Debug, Copy, Clone)]
-pub struct SSARegister {
+pub struct Register {
     id: usize,
     size: ILSize,
     machine_reg: Option<MachineReg>,
 }
 
-impl SSARegister {
+impl Register {
     #[inline]
     pub fn new(id: usize, size: ILSize) -> Self {
         Self {
@@ -70,21 +70,21 @@ impl SSARegister {
     }
 }
 
-impl ILSized for SSARegister {
+impl ILSized for Register {
     fn il_size(&self) -> ILSize {
         self.size
     }
 }
 
-impl PartialEq for SSARegister {
+impl PartialEq for Register {
     fn eq(&self, other: &Self) -> bool {
         self.id == other.id
     }
 }
 
-impl Eq for SSARegister {}
+impl Eq for Register {}
 
-impl hash::Hash for SSARegister {
+impl hash::Hash for Register {
     fn hash<H: hash::Hasher>(&self, state: &mut H) {
         state.write_usize(self.id);
     }

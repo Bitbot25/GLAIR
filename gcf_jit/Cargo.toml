@@ -1,0 +1,10 @@
+[package]
+name = "gcf_jit"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+libc = "0.2.139"
+gcf_x86_64 = { path = "../gcf_x86_64" }

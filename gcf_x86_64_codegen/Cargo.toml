@@ -1,0 +1,13 @@
+[package]
+name = "gcf_x86_64_codegen"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+gcf_rtl = { path = "../gcf_rtl" }
+gcf_x86_64 = { path = "../gcf_x86_64" }
+
+[dev-dependencies]
+gcf_jit = { path = "../gcf_jit" }
