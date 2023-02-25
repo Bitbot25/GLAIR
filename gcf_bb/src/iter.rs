@@ -28,13 +28,13 @@ impl<'g, I> Iterator for Predecessors<'g, I> {
     }
 }
 
-pub struct Descendants<'g, I> {
+pub struct Successors<'g, I> {
     pub(crate) graph: &'g ControlFlow<I>,
     pub(crate) original_block: BasicBlockId,
     pub(crate) edge: ControlFlowEdgeId,
 }
 
-impl<'g, I> Iterator for Descendants<'g, I> {
+impl<'g, I> Iterator for Successors<'g, I> {
     type Item = BasicBlockId;
 
     fn next(&mut self) -> Option<Self::Item> {

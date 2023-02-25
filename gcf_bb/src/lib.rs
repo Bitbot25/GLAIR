@@ -1,5 +1,4 @@
 use std::fmt;
-use std::marker::PhantomData;
 
 use smallvec::SmallVec;
 
@@ -12,6 +11,14 @@ pub struct BasicBlock<I> {
     instructions: SmallVec<[I; 4]>,
 }
 
+impl<I: fmt::Debug> fmt::Debug for BasicBlock<I> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("BasicBlock")
+            .field("instructions", &self.instructions)
+            .finish()
+    }
+}
+
 impl<I> BasicBlock<I> {
     pub fn new(instructions: SmallVec<[I; 4]>) -> Self {
         Self { instructions }
@@ -22,12 +29,15 @@ impl<I> BasicBlock<I> {
     }
 }
 
+// TODO: Use NaN instead of max-1 as none value.
+
+#[derive(Debug)]
 struct BasicBlockNode<I> {
     inner: BasicBlock<I>,
     next_edge: ControlFlowEdgeId,
 }
 
-#[derive(Copy, Clone, Eq, PartialEq)]
+#[derive(Hash, Copy, Clone, Eq, PartialEq)]
 pub struct ControlFlowEdgeId(usize);
 
 impl fmt::Debug for ControlFlowEdgeId {
@@ -47,7 +57,7 @@ impl ControlFlowEdgeId {
     }
 }
 
-#[derive(Copy, Clone, Eq, PartialEq)]
+#[derive(Hash, Copy, Clone, Eq, PartialEq)]
 pub struct BasicBlockId(usize);
 
 impl fmt::Debug for BasicBlockId {
@@ -65,8 +75,13 @@ impl BasicBlockId {
     const fn _internal_none() -> Self {
         BasicBlockId(usize::max_value())
     }
+
+    pub fn as_usize(&self) -> usize {
+        self.0
+    }
 }
 
+#[derive(Debug)]
 struct Edge {
     connection: [BasicBlockId; 2],
     next_edges: [ControlFlowEdgeId; 2],
@@ -76,6 +91,8 @@ pub trait Config {
     type EdgeRemoveMode;
 }
 
+// TODO: Provide a better debug implementation
+#[derive(Debug)]
 pub struct ControlFlow<I> {
     edges: Vec<Edge>,
     blocks: Vec<BasicBlockNode<I>>,
@@ -94,6 +111,11 @@ where
     }
 
     #[inline]
+    pub fn entry(&self) -> BasicBlockId {
+        BasicBlockId(0)
+    }
+
+    #[inline]
     pub fn basic_block(&self, block_id: BasicBlockId) -> &BasicBlock<I> {
         &self.blocks[block_id.0].inner
     }
@@ -101,6 +123,11 @@ where
     #[inline]
     pub fn basic_block_mut(&mut self, block_id: BasicBlockId) -> &mut BasicBlock<I> {
         &mut self.blocks[block_id.0].inner
+    }
+
+    #[inline]
+    pub fn basic_blocks(&self) -> impl Iterator<Item = BasicBlockId> + ExactSizeIterator {
+        (0..self.blocks.len()).map(|n| BasicBlockId(n))
     }
 
     #[inline]
@@ -115,12 +142,8 @@ where
     }
 
     #[inline]
-    pub fn descendants(&self, block_id: BasicBlockId) -> Descendants<I> {
-        eprintln!(
-            "create descendants with {:?} as first edge",
-            self.blocks[block_id.0].next_edge
-        );
-        Descendants {
+    pub fn successors(&self, block_id: BasicBlockId) -> Successors<I> {
+        Successors {
             graph: self,
             original_block: block_id,
             edge: self.blocks[block_id.0].next_edge,

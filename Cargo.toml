@@ -1,2 +1,2 @@
 [workspace]
-members = ["gcf_x86_64", "gcf_x86_64_codegen", "gcf_jit", "gcf_rtl", "gcf_ftl", "gcf_bb"]
+members = ["gcf_x86_64", "gcf_x86_64_codegen", "gcf_jit", "gcf_alloc", "gcf_rtl", "gcf_ftl", "gcf_bb"]

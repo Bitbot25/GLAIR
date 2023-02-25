@@ -16,25 +16,25 @@ fn graph_descendants() {
     let bb0_bb1 = ctrl.add_edge(bb0, bb1);
 
     assert_eq!(
-        ctrl.descendants(bb0).next(),
+        ctrl.successors(bb0).next(),
         Some(bb1),
         "BB1 is expected to come after BB0"
     );
     assert_eq!(
-        ctrl.descendants(bb1).next(),
+        ctrl.successors(bb1).next(),
         None,
         "BB1 should have no descendants"
     );
 
     ctrl.remove_edge(bb0_bb1);
     assert_eq!(
-        ctrl.descendants(bb0).next(),
+        ctrl.successors(bb0).next(),
         None,
         "BB0 should have no descendants after removing edge"
     );
 
     assert_eq!(
-        ctrl.descendants(bb1).next(),
+        ctrl.successors(bb1).next(),
         None,
         "BB1 should still not have any descendants after removing edge"
     );
