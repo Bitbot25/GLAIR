@@ -1,16 +1,17 @@
+use gcf_bb as bb;
+use std::fmt;
 use smallvec::{smallvec, SmallVec};
 use std::collections::{HashMap, HashSet, VecDeque};
 
-use gcf_bb as bb;
+use super::*;
 
 #[derive(Debug)]
-pub struct InstructionId(pub usize);
-
 pub struct LocalLiveRange {
     from: LiveLocation,
     to: LiveLocation,
 }
 
+#[derive(Debug)]
 pub struct LiveLocation {
     mode: LiveLocationMode,
     index: InstructionId,
@@ -22,56 +23,16 @@ pub enum LiveLocationMode {
     Post,
 }
 
+#[derive(Debug)]
 pub struct LiveRange {
     ranges: Vec<LocalLiveRange>,
-}
-
-#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
-pub struct VrReg(pub usize);
-#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
-pub struct HwReg(pub usize);
-
-#[derive(Debug, Copy, Clone)]
-pub struct OperandId(pub usize);
-
-#[derive(Debug, Copy, Clone)]
-pub enum Fixation {
-    Operand(OperandId),
-    HwReg(HwReg),
-    None,
-}
-
-#[derive(Debug, Copy, Clone)]
-pub struct Operand {
-    pub fixation: Fixation,
-    pub id: OperandId,
-    pub reg: VrReg,
-    pub rw_mode: RWMode,
-    pub pos_mode: LiveLocationMode,
-}
-
-#[derive(Debug, Copy, Clone)]
-pub enum RWMode {
-    Use,
-    Def,
-}
-
-#[derive(Debug)]
-pub struct Instruction {
-    id: InstructionId,
-    operands: Vec<Operand>,
-}
-
-impl Instruction {
-    pub fn new(id: InstructionId, operands: Vec<Operand>) -> Self {
-        Instruction { id, operands }
-    }
 }
 
 #[derive(Debug)]
 pub struct Allocator {
     blocks_postorder: Vec<bb::BasicBlockId>,
     block_to_allocbb: HashMap<bb::BasicBlockId, AllocBB>,
+    reg_to_liverange: HashMap<VrReg, LiveRange>,
     cfg: bb::ControlFlow<Instruction>,
 }
 
@@ -80,11 +41,19 @@ struct AllocBB {
     bb: bb::BasicBlockId,
     live_in: LiveSet,
     live_out: LiveSet,
+    registers: HashSet<VrReg>,
+    defs_reverse_order: Vec<LiveLocation>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 struct LiveSet {
     vars: HashSet<VrReg>,
+}
+
+impl fmt::Debug for LiveSet {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(&self.vars, f)
+    }
 }
 
 impl LiveSet {
@@ -106,6 +75,14 @@ impl LiveSet {
         } else {
             self.vars.remove(&reg);
         }
+    }
+
+    fn contains(&self, reg: VrReg) -> bool {
+        self.vars.contains(&reg)
+    }
+
+    fn iter(&self) -> impl Iterator<Item = VrReg> + '_ {
+        self.vars.iter().map(|x| *x)
     }
 }
 
@@ -169,6 +146,8 @@ impl Allocator {
                     bb: block,
                     live_in: LiveSet::new(),
                     live_out: LiveSet::new(),
+                    registers: HashSet::new(),
+                    defs_reverse_order: Vec::new(),
                 },
             );
         }
@@ -176,6 +155,7 @@ impl Allocator {
         let me = Allocator {
             block_to_allocbb,
             blocks_postorder: compute_postorder(cfg.entry(), &cfg),
+            reg_to_liverange: HashMap::new(),
             cfg,
         };
         me
@@ -209,24 +189,149 @@ impl Allocator {
                 allocbb.live_out.union_add(&succ_in);
             }
 
-            let live_in = &mut self.block_to_allocbb.get_mut(&block_id).unwrap().live_in;
+            let allocbb = &mut self.block_to_allocbb.get_mut(&block_id).unwrap();
+            let live_in = &mut allocbb.live_in;
+            let registers = &mut allocbb.registers;
+            let block_defs_reverse = &mut allocbb.defs_reverse_order;
 
             for ins in block.instructions().iter().rev() {
                 for mode in &[LiveLocationMode::Post, LiveLocationMode::Pre] {
                     for operand in &ins.operands {
                         if operand.pos_mode == *mode {
                             match operand.rw_mode {
-                                RWMode::Def => live_in.set(operand.reg, false),
+                                RWMode::Def => {
+                                    live_in.set(operand.reg, false);
+                                    block_defs_reverse.push(LiveLocation {
+                                        mode: *mode,
+                                        index: ins.id(),
+                                    });
+                                }
                                 RWMode::Use => live_in.set(operand.reg, true),
                             }
                         }
                     }
                 }
             }
+            for reg in allocbb.live_out.iter().chain(allocbb.live_in.iter()) {
+                registers.insert(reg);
+            }
 
             for pred in self.cfg.predecessors(block_id) {
                 queue.push_back(pred);
             }
+        }
+    }
+
+    fn insert_local_liverange(&mut self, vreg: VrReg, local: LocalLiveRange) {
+        if let Some(liverange) = self.reg_to_liverange.get_mut(&vreg) {
+            liverange.ranges.push(local);
+        } else {
+            self.reg_to_liverange.insert(
+                vreg,
+                LiveRange {
+                    ranges: vec![local],
+                },
+            );
+        }
+    }
+
+    /// CAUTION! ONLY WORKS WITH SSA
+    pub fn block_liverange(&mut self) {
+        for (block, allocbb) in &self.block_to_allocbb {
+            let real_block = self.cfg.basic_block(*block);
+            let insns = real_block.instructions();
+
+            /*let mut live = allocbb.live_out.clone();
+            // Assume that registers are live for the whole block
+            for reg in live.iter() {
+                let local_range = LocalLiveRange {
+                    from: LiveLocation {
+                        index: insns[0].id(),
+                        mode: LiveLocationMode::Pre,
+                    },
+                    to: LiveLocation {
+                        index: insns.last().unwrap().id(),
+                        mode: LiveLocationMode::Post,
+                    },
+                };
+                // TODO: Had to manually inline the insert_local_liverange function for borrow checker to be happy... Fix this later...
+                if let Some(liverange) = self.reg_to_liverange.get_mut(&reg) {
+                    liverange.ranges.push(local_range);
+                } else {
+                    self.reg_to_liverange.insert(
+                        reg,
+                        LiveRange {
+                            ranges: vec![local_range],
+                        },
+                    );
+                }
+            }*/
+
+            for reg in &allocbb.registers {
+                let local_range = LocalLiveRange {
+                    from: LiveLocation {
+                        index: insns[0].id(),
+                        mode: LiveLocationMode::Pre,
+                    },
+                    to: LiveLocation {
+                        index: insns.last().unwrap().id(),
+                        mode: LiveLocationMode::Post,
+                    },
+                };
+                // TODO: Had to manually inline the insert_local_liverange function for borrow checker to be happy... Fix this later...
+                let local_range_index = if let Some(liverange) = self.reg_to_liverange.get_mut(&reg) {
+                    let index = liverange.ranges.len();
+                    liverange.ranges.push(local_range);
+                    index
+                } else {
+                    self.reg_to_liverange.insert(
+                        *reg,
+                        LiveRange {
+                            ranges: vec![local_range],
+                        },
+                    );
+                    0
+                };
+
+
+                // Set beginning of lifetime
+                let entry = &mut self.reg_to_liverange.get_mut(&reg).unwrap().ranges[local_range_index];
+                let set_begin = !allocbb.live_in.contains(*reg);
+                let set_end   = !allocbb.live_out.contains(*reg);
+
+                for ins in insns.iter().rev() {
+                    if set_end {
+                        for mode in &[LiveLocationMode::Pre, LiveLocationMode::Post] {
+                            for operand in &ins.operands {
+                                if operand.pos_mode != *mode || operand.reg != *reg || operand.rw_mode != RWMode::Use {
+                                    continue;
+                                }
+
+                                entry.to = LiveLocation {
+                                    mode: *mode,
+                                    index: ins.id(),
+                                };
+                            }
+                        }
+                    }
+
+                    if set_begin {
+                        for mode in &[LiveLocationMode::Post, LiveLocationMode::Pre] {
+                            for operand in &ins.operands {
+                                if operand.pos_mode != *mode || operand.reg != *reg || operand.rw_mode != RWMode::Def {
+                                    continue;
+                                }
+
+                                entry.from = LiveLocation {
+                                    mode: *mode,
+                                    index: ins.id(),
+                                };
+                            }
+                        }
+                    }
+                }
+            }
+
         }
     }
 }
