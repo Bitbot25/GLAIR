@@ -15,7 +15,6 @@ impl<'g, I> Iterator for Predecessors<'g, I> {
         if self.edge == ControlFlowEdgeId::_internal_none() {
             return None;
         }
-        dbg!(self.edge);
         let edge = &self.graph.edges[self.edge.0];
         let from = edge.connection[0];
 
@@ -41,7 +40,6 @@ impl<'g, I> Iterator for Successors<'g, I> {
         if self.edge == ControlFlowEdgeId::_internal_none() {
             return None;
         }
-        dbg!(self.edge);
         let edge = &self.graph.edges[self.edge.0];
         let to = edge.connection[1];
 
