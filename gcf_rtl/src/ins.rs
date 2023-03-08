@@ -1,5 +1,6 @@
 use crate::rtx::{DestinationExpr, Rtx};
 
+#[derive(Debug)]
 pub struct Transfer {
     destination: DestinationExpr,
     source: Rtx,
@@ -22,8 +23,10 @@ impl Transfer {
     }
 }
 
+#[derive(Debug)]
 pub struct Return;
 
+#[derive(Debug)]
 pub enum Instruction {
     Transfer(Transfer),
     Return(Return),

@@ -1,8 +1,10 @@
 use crate::reg::{AccessMode, Register};
 
+#[derive(Debug, PartialEq, Eq)]
 pub enum ImmediateExpr {
     Int32(i32),
     UInt32(u32),
+    Template(Template),
 }
 
 impl ImmediateExpr {
@@ -10,15 +12,24 @@ impl ImmediateExpr {
         match self {
             ImmediateExpr::Int32(_) => AccessMode::SI,
             ImmediateExpr::UInt32(_) => AccessMode::SI,
+            ImmediateExpr::Template(_) => panic!("A template immediate has no access mode.")
         }
     }
 }
 
+#[derive(Debug, PartialEq, Eq)]
 pub enum Rtx {
     Destination(DestinationExpr),
     Immediate(ImmediateExpr),
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub enum RtxRef<'a> {
+    DestinationRef(&'a DestinationExpr),
+    ImmediateRef(&'a ImmediateExpr),
+}
+
+#[derive(Debug, PartialEq, Eq)]
 pub struct RegisterExpr {
     reg: Register,
     mode: AccessMode,
@@ -38,12 +49,20 @@ impl RegisterExpr {
     }
 }
 
+#[derive(Debug, PartialEq, Eq)]
 pub struct MemoryExpr {
-    deref: Box<Rtx>,
-    mode: AccessMode,
+    pub deref: Box<Rtx>,
+    pub mode: AccessMode,
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub struct Template {
+    pub id: u32,
+}
+
+#[derive(Debug, PartialEq, Eq)]
 pub enum DestinationExpr {
     Memory(MemoryExpr),
     Register(RegisterExpr),
+    Template(Template),
 }

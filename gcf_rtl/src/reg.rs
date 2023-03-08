@@ -1,4 +1,5 @@
 #[allow(non_camel_case_types)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum MachineRegister {
     x86_64(gcf_x86_64::Register),
 }
@@ -19,6 +20,7 @@ pub enum AccessMode {
     DI,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Register {
     number: usize,
     machine_register: Option<MachineRegister>,
