@@ -1,5 +1,6 @@
 use gcf_rtl::{prelude as rtl, reg::AccessMode};
 use gcf_x86_64 as x86_64;
+use std::collections::HashMap;
 use x86_64::BitMode;
 
 pub enum MachineExpr {
@@ -33,6 +34,7 @@ pub fn mcexpr_from_immexpr(immexpr: &rtl::ImmediateExpr) -> MachineExpr {
         match immexpr {
             rtl::ImmediateExpr::Int32(val) => x86_64::Immediate::Int32(*val as u32),
             rtl::ImmediateExpr::UInt32(val) => x86_64::Immediate::Int32(*val),
+            rtl::ImmediateExpr::Template(_) => panic!("Cannot codegen template"),
         },
         bitmode_from_accsmode(immexpr.as_access_mode()),
     )
@@ -44,6 +46,7 @@ pub fn mcexpr_from_destination(destexpr: &rtl::DestinationExpr) -> MachineExpr {
             panic!("memory as a destination is a work-in-progress")
         }
         rtl::DestinationExpr::Register(reg) => mcexpr_from_regexpr(reg),
+        rtl::DestinationExpr::Template(_) => panic!("Cannot codegen template"),
     }
 }
 
@@ -86,9 +89,195 @@ pub fn codegen_instruction(asm: &mut Vec<x86_64::Instruction>, ins: rtl::Instruc
     }
 }
 
+struct RTLPattern {
+    rtl_code: Vec<rtl::Instruction>,
+}
+
+trait RTLPatternEq {
+    fn try_match<'a>(
+        &self,
+        other: &'a Self,
+        template_mappings: &mut HashMap<u32, rtl::RtxRef<'a>>,
+    ) -> bool;
+}
+
+impl RTLPatternEq for rtl::MemoryExpr {
+    fn try_match<'a>(
+        &self,
+        other: &'a Self,
+        template_mappings: &mut HashMap<u32, rtl::RtxRef<'a>>,
+    ) -> bool {
+        self.mode == other.mode && self.deref.try_match(&other.deref, template_mappings)
+    }
+}
+
+impl RTLPatternEq for rtl::DestinationExpr {
+    fn try_match<'a>(
+        &self,
+        other: &'a Self,
+        template_mappings: &mut HashMap<u32, rtl::RtxRef<'a>>,
+    ) -> bool {
+        match self {
+            rtl::DestinationExpr::Memory(pattern_mem) => match other {
+                rtl::DestinationExpr::Memory(mem) => pattern_mem.try_match(mem, template_mappings),
+                _ => false,
+            },
+            rtl::DestinationExpr::Register(reg_a) => match other {
+                rtl::DestinationExpr::Register(reg_b) => reg_a == reg_b,
+                _ => false,
+            },
+            rtl::DestinationExpr::Template(template_var) => match template_mappings
+                .get(&template_var.id)
+            {
+                Some(template_mapping) => rtl::RtxRef::DestinationRef(other) == *template_mapping,
+                None => {
+                    template_mappings.insert(template_var.id, rtl::RtxRef::DestinationRef(other));
+                    true
+                }
+            },
+        }
+    }
+}
+
+impl RTLPatternEq for rtl::Transfer {
+    fn try_match<'a>(
+        &self,
+        other: &'a Self,
+        template_mappings: &mut HashMap<u32, rtl::RtxRef<'a>>,
+    ) -> bool {
+        self.destination()
+            .try_match(other.destination(), template_mappings)
+            && self.source().try_match(other.source(), template_mappings)
+    }
+}
+
+impl RTLPatternEq for rtl::Rtx {
+    fn try_match<'a>(
+        &self,
+        other: &'a Self,
+        template_mappings: &mut HashMap<u32, rtl::RtxRef<'a>>,
+    ) -> bool {
+        match self {
+            rtl::Rtx::Destination(pattern_destination) => match other {
+                rtl::Rtx::Destination(destination) => {
+                    pattern_destination.try_match(destination, template_mappings)
+                }
+                _ => false,
+            },
+            rtl::Rtx::Immediate(pattern_immediate) => match other {
+                rtl::Rtx::Immediate(immediate) => {
+                    pattern_immediate.try_match(immediate, template_mappings)
+                }
+                _ => false,
+            },
+        }
+    }
+}
+
+impl RTLPatternEq for rtl::ImmediateExpr {
+    fn try_match<'a>(
+        &self,
+        other: &'a Self,
+        template_mappings: &mut HashMap<u32, rtl::RtxRef<'a>>,
+    ) -> bool {
+        match self {
+            rtl::ImmediateExpr::Template(template_imm) => {
+                match template_mappings.get(&template_imm.id) {
+                    Some(template_value) => rtl::RtxRef::ImmediateRef(other) == *template_value,
+                    None => {
+                        template_mappings.insert(template_imm.id, rtl::RtxRef::ImmediateRef(other));
+                        true
+                    }
+                }
+            }
+            _ => *self == *other,
+        }
+    }
+}
+
+impl RTLPatternEq for rtl::Instruction {
+    fn try_match<'a>(
+        &self,
+        other: &'a Self,
+        template_mappings: &mut HashMap<u32, rtl::RtxRef<'a>>,
+    ) -> bool {
+        match self {
+            rtl::Instruction::Transfer(transfer_pattern) => match other {
+                rtl::Instruction::Transfer(transfer) => {
+                    transfer_pattern.try_match(transfer, template_mappings)
+                }
+                _ => false,
+            },
+            rtl::Instruction::Return(_ret) => {
+                todo!("Pattern matching for return instruction is a work-in-progress")
+            }
+        }
+    }
+}
+
+impl RTLPattern {
+    pub fn new_insn(insn: rtl::Instruction) -> Self {
+        Self {
+            rtl_code: vec![insn],
+        }
+    }
+
+    pub fn new(insns: Vec<rtl::Instruction>) -> Self {
+        Self { rtl_code: insns }
+    }
+
+    pub fn try_match(&self, code: &[rtl::Instruction]) -> usize {
+        let mut count = 0;
+        let mut template_mappings = HashMap::new();
+        for (ins, pattern_ins) in code.iter().zip(self.rtl_code.iter()) {
+            if !pattern_ins.try_match(ins, &mut template_mappings) {
+                break;
+            }
+            count += 1;
+        }
+        count
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::codegen_instruction;
+    use crate::*;
+
+    #[test]
+    fn pattern_matching() {
+        let pattern = RTLPattern::new_insn(rtl::Instruction::Transfer(rtl::Transfer::new(
+            rtl::DestinationExpr::Template(rtl::Template { id: 0 }),
+            rtl::Rtx::Immediate(rtl::ImmediateExpr::UInt32(10)),
+        )));
+        let r0 = rtl::Register::vreg(0, rtl::AccessMode::SI);
+        let r1 = rtl::Register::vreg(1, rtl::AccessMode::SI);
+
+        let code = vec![rtl::Instruction::Transfer(rtl::Transfer::new(
+            rtl::DestinationExpr::Register(rtl::RegisterExpr::new(r0.clone(), rtl::AccessMode::SI)),
+            rtl::Rtx::Immediate(rtl::ImmediateExpr::UInt32(10)),
+        ))];
+        assert_eq!(pattern.try_match(&code), 1);
+
+        let pattern = RTLPattern::new_insn(rtl::Instruction::Transfer(rtl::Transfer::new(
+            rtl::DestinationExpr::Template(rtl::Template { id: 0 }),
+            rtl::Rtx::Destination(rtl::DestinationExpr::Template(rtl::Template { id: 0 }))
+        )));
+        assert_eq!(pattern.try_match(&code), 0);
+
+        let code = vec![rtl::Instruction::Transfer(rtl::Transfer::new(
+            rtl::DestinationExpr::Register(rtl::RegisterExpr::new(r0.clone(), rtl::AccessMode::SI)),
+            rtl::Rtx::Destination(rtl::DestinationExpr::Register(rtl::RegisterExpr::new(r1.clone(), rtl::AccessMode::SI))),
+        ))];
+        assert_eq!(pattern.try_match(&code), 0);
+
+        // Same as before but different template variables.
+        let pattern = RTLPattern::new_insn(rtl::Instruction::Transfer(rtl::Transfer::new(
+            rtl::DestinationExpr::Template(rtl::Template { id: 0 }),
+            rtl::Rtx::Destination(rtl::DestinationExpr::Template(rtl::Template { id: 1 }))
+        )));
+        assert_eq!(pattern.try_match(&code), 1);
+
+    }
 
     #[test]
     fn codegen_function_that_returns_10() {
