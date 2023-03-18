@@ -480,6 +480,10 @@ pub fn retn(mode: BitMode) -> Instruction {
     }
 }
 
+pub fn nop() -> Instruction {
+    Instruction { legacy_66h: false, modrm: None, rex: None, sib: None, displacement: None, opcode: OpCode::nop.encoding().0, immediate: None }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::{Encoding, EncodingFlags};

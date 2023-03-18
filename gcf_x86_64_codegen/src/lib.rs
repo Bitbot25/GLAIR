@@ -89,8 +89,9 @@ pub fn codegen_instruction(asm: &mut Vec<x86_64::Instruction>, ins: rtl::Instruc
     }
 }
 
-struct RTLPattern {
+struct RTLPattern<F: Fn(HashMap<u32, rtl::RtxRef>) -> x86_64::Instruction> {
     rtl_code: Vec<rtl::Instruction>,
+    codegen: F,
 }
 
 trait RTLPatternEq {
@@ -215,15 +216,16 @@ impl RTLPatternEq for rtl::Instruction {
     }
 }
 
-impl RTLPattern {
-    pub fn new_insn(insn: rtl::Instruction) -> Self {
+impl<F: Fn(HashMap<u32, rtl::RtxRef>) -> x86_64::Instruction> RTLPattern<F> {
+    pub fn new_insn(insn: rtl::Instruction, codegen: F) -> Self {
         Self {
             rtl_code: vec![insn],
+            codegen,
         }
     }
 
-    pub fn new(insns: Vec<rtl::Instruction>) -> Self {
-        Self { rtl_code: insns }
+    pub fn new(insns: Vec<rtl::Instruction>, codegen: F) -> Self {
+        Self { rtl_code: insns, codegen }
     }
 
     pub fn try_match(&self, code: &[rtl::Instruction]) -> usize {
@@ -237,6 +239,21 @@ impl RTLPattern {
         }
         count
     }
+
+    pub fn apply(&self, code: &[rtl::Instruction]) -> usize {
+        let mut count = 0;
+        let mut template_mappings = HashMap::new();
+        for (ins, pattern_ins) in code.iter().zip(self.rtl_code.iter()) {
+            if !pattern_ins.try_match(ins, &mut template_mappings) {
+                break;
+            }
+            count += 1;
+        }
+        if count != 0 {
+            (self.codegen)(template_mappings);
+        }
+        count
+    }
 }
 
 #[cfg(test)]
@@ -245,10 +262,11 @@ mod tests {
 
     #[test]
     fn pattern_matching() {
+        let nop = |_map: HashMap<u32, rtl::RtxRef>| x86_64::nop();
         let pattern = RTLPattern::new_insn(rtl::Instruction::Transfer(rtl::Transfer::new(
             rtl::DestinationExpr::Template(rtl::Template { id: 0 }),
             rtl::Rtx::Immediate(rtl::ImmediateExpr::UInt32(10)),
-        )));
+        )), nop);
         let r0 = rtl::Register::vreg(0, rtl::AccessMode::SI);
         let r1 = rtl::Register::vreg(1, rtl::AccessMode::SI);
 
@@ -261,7 +279,7 @@ mod tests {
         let pattern = RTLPattern::new_insn(rtl::Instruction::Transfer(rtl::Transfer::new(
             rtl::DestinationExpr::Template(rtl::Template { id: 0 }),
             rtl::Rtx::Destination(rtl::DestinationExpr::Template(rtl::Template { id: 0 }))
-        )));
+        )), nop);
         assert_eq!(pattern.try_match(&code), 0);
 
         let code = vec![rtl::Instruction::Transfer(rtl::Transfer::new(
@@ -274,7 +292,7 @@ mod tests {
         let pattern = RTLPattern::new_insn(rtl::Instruction::Transfer(rtl::Transfer::new(
             rtl::DestinationExpr::Template(rtl::Template { id: 0 }),
             rtl::Rtx::Destination(rtl::DestinationExpr::Template(rtl::Template { id: 1 }))
-        )));
+        )), nop);
         assert_eq!(pattern.try_match(&code), 1);
 
     }
